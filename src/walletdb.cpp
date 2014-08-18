@@ -18,19 +18,68 @@ static uint64 nAccountingEntryNumber = 0;
 // CWalletDB
 //
 
-bool CWalletDB::WriteName(const string& strAddress, const string& strName)
+bool CWalletDB::WriteAlias(const string& strAddress, const string& strName)
 {
     nWalletDBUpdated++;
     return Write(make_pair(string("name"), strAddress), strName);
 }
 
-bool CWalletDB::EraseName(const string& strAddress)
+bool CWalletDB::EraseAlias(const string& strAddress)
 {
     // This should only be used for sending addresses, never for receiving addresses,
     // receiving addresses must always have an address book entry if they're not change return.
     nWalletDBUpdated++;
     return Erase(make_pair(string("name"), strAddress));
 }
+
+#ifdef GUI
+bool CWalletDB::WriteAliasFirstUpdate(const std::vector<unsigned char>& vchName,
+                                     const uint256& hex,
+                                     const uint64& rand,
+                                     const std::vector<unsigned char>& vchData,
+                                     const CWalletTx &wtx)
+{
+    CDataStream ssValue;
+    ssValue << hex << rand << vchData << wtx;
+
+    nWalletDBUpdated++;
+    return Write(make_pair(string("name_firstupdate"), vchName), ssValue, true);
+}
+bool CWalletDB::WriteAliasFirstUpdate(const std::vector<unsigned char>& vchName,
+                                     const uint256& hex,
+                                     const uint64& rand,
+                                     const std::vector<unsigned char>& vchData,
+                                     const CWalletTx &wtx) {
+    return true;
+}
+bool CWalletDB::WriteOfferFirstUpdate(const std::vector<unsigned char>& vchName,
+                                     const uint256& hex,
+                                     const uint64& rand,
+                                     const std::vector<unsigned char>& vchData,
+                                     const CWalletTx &wtx) {
+    return true;
+}
+bool CWalletDB::WriteCertFirstUpdate(const std::vector<unsigned char>& vchName,
+                                     const uint256& hex,
+                                     const uint64& rand,
+                                     const std::vector<unsigned char>& vchData,
+                                     const CWalletTx &wtx) {
+    return true;
+}
+
+bool CWalletDB::EraseAliasFirstUpdate(const std::vector<unsigned char>& vchName)
+{
+    nWalletDBUpdated++;
+    return Erase(make_pair(string("name_firstupdate"), vchName));
+}
+bool CWalletDB::EraseOfferFirstUpdate(const std::vector<unsigned char>& vchName)
+{
+}
+bool CWalletDB::EraseCertFirstUpdate(const std::vector<unsigned char>& vchName)
+{
+}
+
+#endif
 
 bool CWalletDB::ReadAccount(const string& strAccount, CAccount& account)
 {
@@ -428,6 +477,7 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
                         SoftSetBoolArg("-rescan", true);
                 }
             }
+
             if (!strErr.empty())
                 printf("%s\n", strErr.c_str());
         }

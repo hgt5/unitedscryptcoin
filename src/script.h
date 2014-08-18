@@ -64,10 +64,34 @@ typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
 const char* GetTxnOutputType(txnouttype t);
 
 /** Script opcodes */
-enum opcodetype
-{
+enum opcodetype {
     // push value
     OP_0 = 0x00,
+
+    // aliases, data aliases
+    OP_ALIAS_NEW = 0x01,
+    OP_ALIAS_ACTIVATE=0x02,
+    OP_ALIAS_UPDATE=0x03,
+
+    // distributed exchange
+    OP_OFFER_NEW=0x04,
+    OP_OFFER_ACTIVATE=0x05,
+    OP_OFFER_UPDATE=0x06,
+    OP_OFFER_ACCEPT=0x07,
+    OP_OFFER_PAY=0x08,
+    OP_OFFERACCEPT_TRANSFER=0x09,
+
+    // distributed licensing system
+    OP_CERTISSUER_NEW=0x0a,
+    OP_CERTISSUER_ACTIVATE=0x0b,
+    OP_CERTISSUER_UPDATE=0x0c,
+    OP_CERT_NEW=0x0d,
+    OP_CERT_TRANSFER=0x0e,
+
+    // all future additions
+    OP_SYSCOIN_EXTENDED=0x0f,
+    OP_SYSCOIN_EXTENDED2=0x10,
+    
     OP_FALSE = OP_0,
     OP_PUSHDATA1 = 0x4c,
     OP_PUSHDATA2 = 0x4d,

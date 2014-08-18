@@ -10,6 +10,13 @@
 #include "bitcoinrpc.h"
 #include "init.h"
 #include "base58.h"
+#include "alias.h"
+#include "offer.h"
+#include "cert.h"
+#include "txdb.h"
+#include "script.h"
+
+#include <boost/xpressive/xpressive_dynamic.hpp>
 
 using namespace std;
 using namespace boost;
@@ -18,6 +25,13 @@ using namespace json_spirit;
 
 int64 nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
+
+extern CAliasDB *paliasdb;
+
+template<typename T> void ConvertTo(Value& value, bool fAllowNull=false);
+
+inline bool AddressToHash160(const char* psz, uint160& hash160Ret);
+
 
 std::string HelpRequiringPassphrase()
 {
@@ -46,6 +60,7 @@ void WalletTxToJSON(const CWalletTx& wtx, Object& entry)
     }
     entry.push_back(Pair("txid", wtx.GetHash().GetHex()));
     entry.push_back(Pair("time", (boost::int64_t)wtx.GetTxTime()));
+    entry.push_back(Pair("data", wtx.GetBase64Data()));
     entry.push_back(Pair("timereceived", (boost::int64_t)wtx.nTimeReceived));
     BOOST_FOREACH(const PAIRTYPE(string,string)& item, wtx.mapValue)
         entry.push_back(Pair(item.first, item.second));
@@ -82,6 +97,7 @@ Value getinfo(const Array& params, bool fHelp)
     obj.push_back(Pair("proxy",         (proxy.first.IsValid() ? proxy.first.ToStringIPPort() : string())));
     obj.push_back(Pair("difficulty",    (double)GetDifficulty()));
     obj.push_back(Pair("testnet",       fTestNet));
+    obj.push_back(Pair("cakenet",       fCakeNet));
     if (pwalletMain) {
         obj.push_back(Pair("keypoololdest", (boost::int64_t)pwalletMain->GetOldestKeyPoolTime()));
         obj.push_back(Pair("keypoolsize",   (int)pwalletMain->GetKeyPoolSize()));
@@ -101,7 +117,7 @@ Value getnewaddress(const Array& params, bool fHelp)
     if (fHelp || params.size() > 1)
         throw runtime_error(
             "getnewaddress [account]\n"
-            "Returns a new UnitedScryptCoin address for receiving payments.  "
+            "Returns a new Syscoin address for receiving payments.  "
             "If [account] is specified (recommended), it is added to the address book "
             "so payments received with the address will be credited to [account].");
 
@@ -168,7 +184,7 @@ Value getaccountaddress(const Array& params, bool fHelp)
     if (fHelp || params.size() != 1)
         throw runtime_error(
             "getaccountaddress <account>\n"
-            "Returns the current UnitedScryptCoin address for receiving payments to this account.");
+            "Returns the current Syscoin address for receiving payments to this account.");
 
     // Parse the account first so we don't generate a key if there's an error
     string strAccount = AccountFromValue(params[0]);
@@ -186,12 +202,12 @@ Value setaccount(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "setaccount <unitedscryptcoinaddress> <account>\n"
+            "setaccount <syscoinaddress> <account>\n"
             "Sets the account associated with the given address.");
 
     CBitcoinAddress address(params[0].get_str());
     if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid UnitedScryptCoin address");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Syscoin address");
 
 
     string strAccount;
@@ -216,12 +232,12 @@ Value getaccount(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "getaccount <unitedscryptcoinaddress>\n"
+            "getaccount <syscoinaddress>\n"
             "Returns the account associated with the given address.");
 
     CBitcoinAddress address(params[0].get_str());
     if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid UnitedScryptCoin address");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Syscoin address");
 
     string strAccount;
     map<CTxDestination, string>::iterator mi = pwalletMain->mapAddressBook.find(address.Get());
@@ -272,18 +288,21 @@ Value setmininput(const Array& params, bool fHelp)
 
 Value sendtoaddress(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 2 || params.size() > 4)
+    if (fHelp || params.size() < 2 || params.size() > 5)
         throw runtime_error(
-            "sendtoaddress <unitedscryptcoinaddress> <amount> [comment] [comment-to]\n"
+            "sendtoaddress <syscoinaddress> <amount> [comment] [comment-to] [data]\n"
             "<amount> is a real and is rounded to the nearest 0.00000001"
+            "<data> is a base64 encoded data chunk"
             + HelpRequiringPassphrase());
 
     CBitcoinAddress address(params[0].get_str());
     if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid UnitedScryptCoin address");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Syscoin address");
 
     // Amount
     int64 nAmount = AmountFromValue(params[1]);
+    if (nAmount < MIN_TXOUT_AMOUNT)
+        throw JSONRPCError(-101, "Send amount too small");
 
     // Wallet comments
     CWalletTx wtx;
@@ -292,10 +311,44 @@ Value sendtoaddress(const Array& params, bool fHelp)
     if (params.size() > 3 && params[3].type() != null_type && !params[3].get_str().empty())
         wtx.mapValue["to"]      = params[3].get_str();
 
+    // Transaction data
+    std::string txdata;
+    if (params.size() > 4 && params[4].type() != null_type && !params[4].get_str().empty()) {
+        txdata = params[4].get_str();
+        if (txdata.length() > MAX_TX_DATA_SIZE)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "data chunk is too long. split it the payload to several transactions.");
+    }
+
     if (pwalletMain->IsLocked())
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
-    string strError = pwalletMain->SendMoneyToDestination(address.Get(), nAmount, wtx);
+    string strError = pwalletMain->SendMoneyToDestination(address.Get(), nAmount, wtx, false, txdata);
+    if (strError != "")
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+
+    return wtx.GetHash().GetHex();
+}
+
+Value senddata(const Array& params, bool fHelp)
+{
+    if (fHelp || 1 != params.size())
+        throw runtime_error(
+            "senddata [data]\n"
+            "<data> is a base64 encoded data chunk"
+            + HelpRequiringPassphrase());
+
+    CWalletTx wtx;
+
+    // Transaction data
+    std::string txdata;
+    if (params.size() > 0 && params[0].type() != null_type && !params[0].get_str().empty()) {
+        txdata = params[0].get_str();
+        if (txdata.length() > MAX_TX_DATA_SIZE)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "data chunk is too long. split it the payload to several transactions.");
+    }
+
+    string strError = pwalletMain->SendData(wtx, false, txdata);
+
     if (strError != "")
         throw JSONRPCError(RPC_WALLET_ERROR, strError);
 
@@ -337,7 +390,7 @@ Value signmessage(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 2)
         throw runtime_error(
-            "signmessage <unitedscryptcoinaddress> <message>\n"
+            "signmessage <syscoinaddress> <message>\n"
             "Sign a message with the private key of an address");
 
     EnsureWalletIsUnlocked();
@@ -372,7 +425,7 @@ Value verifymessage(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 3)
         throw runtime_error(
-            "verifymessage <unitedscryptcoinaddress> <signature> <message>\n"
+            "verifymessage <syscoinaddress> <signature> <message>\n"
             "Verify a signed message");
 
     string strAddress  = params[0].get_str();
@@ -409,14 +462,14 @@ Value getreceivedbyaddress(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "getreceivedbyaddress <unitedscryptcoinaddress> [minconf=1]\n"
-            "Returns the total amount received by <unitedscryptcoinaddress> in transactions with at least [minconf] confirmations.");
+            "getreceivedbyaddress <syscoinaddress> [minconf=1]\n"
+            "Returns the total amount received by <syscoinaddress> in transactions with at least [minconf] confirmations.");
 
     // Bitcoin address
     CBitcoinAddress address = CBitcoinAddress(params[0].get_str());
     CScript scriptPubKey;
     if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid UnitedScryptCoin address");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Syscoin address");
     scriptPubKey.SetDestination(address.Get());
     if (!IsMine(*pwalletMain,scriptPubKey))
         return (double)0.0;
@@ -555,7 +608,8 @@ Value getbalance(const Array& params, bool fHelp)
             string strSentAccount;
             list<pair<CTxDestination, int64> > listReceived;
             list<pair<CTxDestination, int64> > listSent;
-            wtx.GetAmounts(listReceived, listSent, allFee, strSentAccount);
+            bool fNameTx;
+            wtx.GetAmounts(listReceived, listSent, allFee, strSentAccount, fNameTx);
             if (wtx.GetDepthInMainChain() >= nMinDepth)
             {
                 BOOST_FOREACH(const PAIRTYPE(CTxDestination,int64)& r, listReceived)
@@ -628,17 +682,20 @@ Value movecmd(const Array& params, bool fHelp)
 
 Value sendfrom(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 3 || params.size() > 6)
+    if (fHelp || params.size() < 3 || params.size() > 7)
         throw runtime_error(
-            "sendfrom <fromaccount> <tounitedscryptcoinaddress> <amount> [minconf=1] [comment] [comment-to]\n"
+            "sendfrom <fromaccount> <tosyscoinaddress> <amount> [minconf=1] [comment] [comment-to] [data]\n"
             "<amount> is a real and is rounded to the nearest 0.00000001"
+            "<data> is a base64 encoded data chunk"
             + HelpRequiringPassphrase());
 
     string strAccount = AccountFromValue(params[0]);
     CBitcoinAddress address(params[1].get_str());
     if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid UnitedScryptCoin address");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Syscoin address");
     int64 nAmount = AmountFromValue(params[2]);
+    if (nAmount < MIN_TXOUT_AMOUNT)
+        throw JSONRPCError(-101, "Send amount too small");
     int nMinDepth = 1;
     if (params.size() > 3)
         nMinDepth = params[3].get_int();
@@ -650,6 +707,13 @@ Value sendfrom(const Array& params, bool fHelp)
     if (params.size() > 5 && params[5].type() != null_type && !params[5].get_str().empty())
         wtx.mapValue["to"]      = params[5].get_str();
 
+    std::string txdata;
+    if (params.size() > 6 && params[6].type() != null_type && !params[6].get_str().empty()) {
+        txdata = params[6].get_str();
+        if (txdata.length() > MAX_TX_DATA_SIZE)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "data chunk is too long. split it the payload to several transactions.");
+    }
+
     EnsureWalletIsUnlocked();
 
     // Check funds
@@ -658,7 +722,7 @@ Value sendfrom(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Account has insufficient funds");
 
     // Send
-    string strError = pwalletMain->SendMoneyToDestination(address.Get(), nAmount, wtx);
+    string strError = pwalletMain->SendMoneyToDestination(address.Get(), nAmount, wtx, false, txdata);
     if (strError != "")
         throw JSONRPCError(RPC_WALLET_ERROR, strError);
 
@@ -668,10 +732,11 @@ Value sendfrom(const Array& params, bool fHelp)
 
 Value sendmany(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 2 || params.size() > 4)
+    if (fHelp || params.size() < 2 || params.size() > 5)
         throw runtime_error(
-            "sendmany <fromaccount> {address:amount,...} [minconf=1] [comment]\n"
+            "sendmany <fromaccount> {address:amount,...} [minconf=1] [comment] [data]\n"
             "amounts are double-precision floating point numbers"
+            "<data> is a base64 encoded data chunk"
             + HelpRequiringPassphrase());
 
     string strAccount = AccountFromValue(params[0]);
@@ -685,6 +750,13 @@ Value sendmany(const Array& params, bool fHelp)
     if (params.size() > 3 && params[3].type() != null_type && !params[3].get_str().empty())
         wtx.mapValue["comment"] = params[3].get_str();
 
+    std::string txdata;
+    if (params.size() > 4 && params[4].type() != null_type && !params[4].get_str().empty()) {
+       txdata = params[4].get_str();
+        if (txdata.length() > MAX_TX_DATA_SIZE)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "data chunk is too long. split it the payload to several transactions.");
+    }
+
     set<CBitcoinAddress> setAddress;
     vector<pair<CScript, int64> > vecSend;
 
@@ -693,7 +765,7 @@ Value sendmany(const Array& params, bool fHelp)
     {
         CBitcoinAddress address(s.name_);
         if (!address.IsValid())
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid UnitedScryptCoin address: ")+s.name_);
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid Datacoin address: ")+s.name_);
 
         if (setAddress.count(address))
             throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, duplicated address: ")+s.name_);
@@ -702,6 +774,8 @@ Value sendmany(const Array& params, bool fHelp)
         CScript scriptPubKey;
         scriptPubKey.SetDestination(address.Get());
         int64 nAmount = AmountFromValue(s.value_);
+        if (nAmount < MIN_TXOUT_AMOUNT)
+            throw JSONRPCError(-101, "Send amount too small");
         totalAmount += nAmount;
 
         vecSend.push_back(make_pair(scriptPubKey, nAmount));
@@ -718,7 +792,7 @@ Value sendmany(const Array& params, bool fHelp)
     CReserveKey keyChange(pwalletMain);
     int64 nFeeRequired = 0;
     string strFailReason;
-    bool fCreated = pwalletMain->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired, strFailReason);
+    bool fCreated = pwalletMain->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired, strFailReason, NULL, txdata);
     if (!fCreated)
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, strFailReason);
     if (!pwalletMain->CommitTransaction(wtx, keyChange))
@@ -748,7 +822,7 @@ static CScript _createmultisig(const Array& params)
     {
         const std::string& ks = keys[i].get_str();
 
-        // Case 1: UnitedScryptCoin address and we have full public key:
+        // Case 1: Syscoin address and we have full public key:
         CBitcoinAddress address(ks);
         if (pwalletMain && address.IsValid())
         {
@@ -789,7 +863,7 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     {
         string msg = "addmultisigaddress <nrequired> <'[\"key\",\"key\"]'> [account]\n"
             "Add a nrequired-to-sign multisignature address to the wallet\"\n"
-            "each key is a UnitedScryptCoin address or hex-encoded public key\n"
+            "each key is a Syscoin address or hex-encoded public key\n"
             "If [account] is specified, assign address to [account].";
         throw runtime_error(msg);
     }
@@ -814,7 +888,7 @@ Value createmultisig(const Array& params, bool fHelp)
         string msg = "createmultisig <nrequired> <'[\"key\",\"key\"]'>\n"
             "Creates a multi-signature address and returns a json object\n"
             "with keys:\n"
-            "address : unitedscryptcoin address\n"
+            "address : syscoin address\n"
             "redeemScript : hex-encoded redemption script";
         throw runtime_error(msg);
     }
@@ -976,49 +1050,76 @@ Value listreceivedbyaccount(const Array& params, bool fHelp)
     return ListReceived(params, true);
 }
 
-void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDepth, bool fLong, Array& ret)
-{
+void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDepth, bool fLong, Array& ret) {
     int64 nFee;
     string strSentAccount;
     list<pair<CTxDestination, int64> > listReceived;
     list<pair<CTxDestination, int64> > listSent;
-
-    wtx.GetAmounts(listReceived, listSent, nFee, strSentAccount);
+    bool fNameTx;
+    wtx.GetAmounts(listReceived, listSent, nFee, strSentAccount, fNameTx);
 
     bool fAllAccounts = (strAccount == string("*"));
 
     // Sent
-    if ((!listSent.empty() || nFee != 0) && (fAllAccounts || strAccount == strSentAccount))
-    {
-        BOOST_FOREACH(const PAIRTYPE(CTxDestination, int64)& s, listSent)
-        {
+    if ((!listSent.empty() || nFee != 0 || fNameTx) && (fAllAccounts || strAccount == strSentAccount)) {
+        if (listSent.empty() || fNameTx) {
+            // alias transaction, or some non-standard transaction with non-zero fee
             Object entry;
             entry.push_back(Pair("account", strSentAccount));
-            entry.push_back(Pair("address", CBitcoinAddress(s.first).ToString()));
+            string strAddress;
+            if (fNameTx) {
+                vector<vector<unsigned char> > vvchArgs;
+                int op,nOut, nTxOut;
+                bool good = DecodeAliasTx(wtx, op, nOut, vvchArgs, -1);
+                if(good && IsAliasOp(op)) {
+                    nTxOut = IndexOfNameOutput(wtx);
+                    ExtractAliasAddress(wtx.vout[nTxOut].scriptPubKey, strAddress);
+                } 
+                good = DecodeOfferTx(wtx, op, nOut, vvchArgs, -1);
+                if(good && IsOfferOp(op)) {
+                    nTxOut = IndexOfOfferOutput(wtx);
+                    ExtractOfferAddress(wtx.vout[nTxOut].scriptPubKey, strAddress);
+                } 
+                good = DecodeCertTx(wtx, op, nOut, vvchArgs, -1);
+                if(good && IsCertOp(op)) {
+                    nTxOut = IndexOfCertIssuerOutput(wtx);
+                    ExtractCertIssuerAddress(wtx.vout[nTxOut].scriptPubKey, strAddress);
+                } 
+            }
+            entry.push_back(Pair("address", strAddress));
             entry.push_back(Pair("category", "send"));
-            entry.push_back(Pair("amount", ValueFromAmount(-s.second)));
+            entry.push_back(Pair("amount", ValueFromAmount(0)));
             entry.push_back(Pair("fee", ValueFromAmount(-nFee)));
             if (fLong)
                 WalletTxToJSON(wtx, entry);
             ret.push_back(entry);
         }
+        else {
+            BOOST_FOREACH(const PAIRTYPE(CTxDestination, int64)& s, listSent) {
+                Object entry;
+                entry.push_back(Pair("account", strSentAccount));
+                entry.push_back(Pair("address", CBitcoinAddress(s.first).ToString()));
+                entry.push_back(Pair("category", "send"));
+                entry.push_back(Pair("amount", ValueFromAmount(-s.second)));
+                entry.push_back(Pair("fee", ValueFromAmount(-nFee)));
+                if (fLong)
+                    WalletTxToJSON(wtx, entry);
+                ret.push_back(entry);
+            }
+        }
     }
 
     // Received
-    if (listReceived.size() > 0 && wtx.GetDepthInMainChain() >= nMinDepth)
-    {
-        BOOST_FOREACH(const PAIRTYPE(CTxDestination, int64)& r, listReceived)
-        {
+    if (listReceived.size() > 0 && wtx.GetDepthInMainChain() >= nMinDepth) {
+        BOOST_FOREACH(const PAIRTYPE(CTxDestination, int64)& r, listReceived) {
             string account;
             if (pwalletMain->mapAddressBook.count(r.first))
                 account = pwalletMain->mapAddressBook[r.first];
-            if (fAllAccounts || (account == strAccount))
-            {
+            if (fAllAccounts || (account == strAccount)) {
                 Object entry;
                 entry.push_back(Pair("account", account));
                 entry.push_back(Pair("address", CBitcoinAddress(r.first).ToString()));
-                if (wtx.IsCoinBase())
-                {
+                if (wtx.IsCoinBase()) {
                     if (wtx.GetDepthInMainChain() < 1)
                         entry.push_back(Pair("category", "orphan"));
                     else if (wtx.GetBlocksToMaturity() > 0)
@@ -1052,6 +1153,71 @@ void AcentryToJSON(const CAccountingEntry& acentry, const string& strAccount, Ar
         entry.push_back(Pair("comment", acentry.strComment));
         ret.push_back(entry);
     }
+}
+
+Value dumpdata(const Array& params, bool fHelp) {
+    if (fHelp || 1 != params.size())
+        throw runtime_error(
+            "dumpdata [hash]\n"
+            "<data> is the base64 encoded tx hash of the data"
+            + HelpRequiringPassphrase());
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+
+    Object entry;
+    if (!pwalletMain->mapWallet.count(hash))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction id");
+
+    const CWalletTx& wtx = pwalletMain->mapWallet[hash];
+
+    return wtx.GetBase64Data();
+}
+
+Value setdata(const Array& params, bool fHelp) {
+    if (fHelp || 1 != params.size())
+        throw runtime_error(
+            "setdata [data]\n"
+            "<data> is a base64 encoded data chunk"
+            + HelpRequiringPassphrase());
+
+    CWalletTx wtx;
+
+    // Transaction data
+    std::string txdata;
+    if (params.size() > 0 && params[0].type() != null_type && !params[0].get_str().empty()) {
+        txdata = params[0].get_str();
+        if (txdata.length() > MAX_TX_DATA_SIZE)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Data chunk is too long.  Split the payload to several transactions.");
+    }
+
+    string strError = pwalletMain->SendData(wtx, false, txdata);
+
+    if (strError != "")
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+
+    return wtx.GetHash().GetHex();
+}
+
+Value phrpcfunc(const Array& params, bool fHelp)
+{
+    if (fHelp || 1 != params.size())
+        throw runtime_error(
+            "placeholder <>\n"
+            "<> TBD."
+            + HelpRequiringPassphrase());
+
+return 0;
+}
+
+Value keyscan(const Array& params, bool fHelp)
+{
+    if (fHelp || 2 > params.size())
+        throw runtime_error(
+                "keyscan [<start-name>] [<max-returned>]\n"
+                "scan all keys, starting at start-name and returning a maximum number of entries (default 500)\n"
+                );
+    return(double)0;
 }
 
 Value listtransactions(const Array& params, bool fHelp)
@@ -1136,7 +1302,8 @@ Value listaccounts(const Array& params, bool fHelp)
         string strSentAccount;
         list<pair<CTxDestination, int64> > listReceived;
         list<pair<CTxDestination, int64> > listSent;
-        wtx.GetAmounts(listReceived, listSent, nFee, strSentAccount);
+        bool fNameTx;
+        wtx.GetAmounts(listReceived, listSent, nFee, strSentAccount, fNameTx);
         mapAccountBalances[strSentAccount] -= nFee;
         BOOST_FOREACH(const PAIRTYPE(CTxDestination, int64)& s, listSent)
             mapAccountBalances[strSentAccount] -= s.second;
@@ -1296,7 +1463,7 @@ Value keypoolrefill(const Array& params, bool fHelp)
 void ThreadTopUpKeyPool(void* parg)
 {
     // Make this thread recognisable as the key-topping-up thread
-    RenameThread("bitcoin-key-top");
+    RenameThread("syscoin-key-top");
 
     pwalletMain->TopUpKeyPool();
 }
@@ -1304,7 +1471,7 @@ void ThreadTopUpKeyPool(void* parg)
 void ThreadCleanWalletPassphrase(void* parg)
 {
     // Make this thread recognisable as the wallet relocking thread
-    RenameThread("bitcoin-lock-wa");
+    RenameThread("syscoin-lock-wa");
 
     int64 nMyWakeTime = GetTimeMillis() + *((int64*)parg) * 1000;
 
@@ -1469,7 +1636,7 @@ Value encryptwallet(const Array& params, bool fHelp)
     // slack space in .dat files; that is bad if the old data is
     // unencrypted private keys. So:
     StartShutdown();
-    return "wallet encrypted; UnitedScryptCoin server stopping, restart to run with encrypted wallet. The keypool has been flushed, you need to make a new backup.";
+    return "wallet encrypted; Syscoin server stopping, restart to run with encrypted wallet. The keypool has been flushed, you need to make a new backup.";
 }
 
 class DescribeAddressVisitor : public boost::static_visitor<Object>
@@ -1511,8 +1678,8 @@ Value validateaddress(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "validateaddress <unitedscryptcoinaddress>\n"
-            "Return information about <unitedscryptcoinaddress>.");
+            "validateaddress <syscoinaddress>\n"
+            "Return information about <syscoinaddress>.");
 
     CBitcoinAddress address(params[0].get_str());
     bool isValid = address.IsValid();

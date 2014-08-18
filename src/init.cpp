@@ -25,6 +25,13 @@
 using namespace std;
 using namespace boost;
 
+extern CAliasDB *paliasdb;
+extern COfferDB *pofferdb;
+extern CCertDB *pcertdb;
+
+void rescanforaliases(CBlockIndex *pindexRescan);
+void rescanforoffers(CBlockIndex *pindexRescan);
+
 CWallet* pwalletMain;
 CClientUIInterface uiInterface;
 
@@ -36,6 +43,7 @@ CClientUIInterface uiInterface;
 #else
 #define MIN_CORE_FILEDESCRIPTORS 150
 #endif
+
 
 // Used to pass flags to the Bind() function
 enum BindFlags {
@@ -110,9 +118,18 @@ void Shutdown()
             pblocktree->Flush();
         if (pcoinsTip)
             pcoinsTip->Flush();
+        if (paliasdb)
+            paliasdb->Flush();        
+        if (pofferdb)
+            pofferdb->Flush(); 
+        if (pcertdb)
+            pcertdb->Flush();   
         delete pcoinsTip; pcoinsTip = NULL;
         delete pcoinsdbview; pcoinsdbview = NULL;
         delete pblocktree; pblocktree = NULL;
+        delete paliasdb; paliasdb = NULL;
+        delete pofferdb; pofferdb = NULL;
+        delete pcertdb; pcertdb = NULL;
     }
     if (pwalletMain)
         bitdb.Flush(true);
@@ -179,12 +196,12 @@ bool AppInit(int argc, char* argv[])
         if (mapArgs.count("-?") || mapArgs.count("--help"))
         {
             // First part of help message is specific to bitcoind / RPC client
-            std::string strUsage = _("UnitedScryptCoin version") + " " + FormatFullVersion() + "\n\n" +
+            std::string strUsage = _("Syscoin version") + " " + FormatFullVersion() + "\n\n" +
                 _("Usage:") + "\n" +
-                  "  unitedscryptcoind [options]                     " + "\n" +
-                  "  unitedscryptcoind [options] <command> [params]  " + _("Send command to -server or unitedscryptcoind") + "\n" +
-                  "  unitedscryptcoind [options] help                " + _("List commands") + "\n" +
-                  "  unitedscryptcoind [options] help <command>      " + _("Get help for a command") + "\n";
+                  "  syscoind [options]                     " + "\n" +
+                  "  syscoind [options] <command> [params]  " + _("Send command to -server or syscoind") + "\n" +
+                  "  syscoind [options] help                " + _("List commands") + "\n" +
+                  "  syscoind [options] help <command>      " + _("Get help for a command") + "\n";
 
             strUsage += "\n" + HelpMessage();
 
@@ -194,7 +211,7 @@ bool AppInit(int argc, char* argv[])
 
         // Command-line RPC
         for (int i = 1; i < argc; i++)
-            if (!IsSwitchChar(argv[i][0]) && !boost::algorithm::istarts_with(argv[i], "unitedscryptcoin:"))
+            if (!IsSwitchChar(argv[i][0]) && !boost::algorithm::istarts_with(argv[i], "syscoin:"))
                 fCommandLine = true;
 
         if (fCommandLine)
@@ -297,8 +314,8 @@ std::string HelpMessage()
 {
     string strUsage = _("Options:") + "\n" +
         "  -?                     " + _("This help message") + "\n" +
-        "  -conf=<file>           " + _("Specify configuration file (default: unitedscryptcoin.conf)") + "\n" +
-        "  -pid=<file>            " + _("Specify pid file (default: unitedscryptcoind.pid)") + "\n" +
+        "  -conf=<file>           " + _("Specify configuration file (default: syscoin.conf)") + "\n" +
+        "  -pid=<file>            " + _("Specify pid file (default: syscoind.pid)") + "\n" +
         "  -gen                   " + _("Generate coins (default: 0)") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
         "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 25)") + "\n" +
@@ -307,7 +324,7 @@ std::string HelpMessage()
         "  -socks=<n>             " + _("Select the version of socks proxy to use (4-5, default: 5)") + "\n" +
         "  -tor=<ip:port>         " + _("Use proxy to reach tor hidden services (default: same as -proxy)") + "\n"
         "  -dns                   " + _("Allow DNS lookups for -addnode, -seednode and -connect") + "\n" +
-        "  -port=<port>           " + _("Listen for connections on <port> (default: 23328 or testnet: 33328)") + "\n" +
+        "  -port=<port>           " + _("Listen for connections on <port> (default: 8369, testnet: 18369, cakenet: 28369)") + "\n" +
         "  -maxconnections=<n>    " + _("Maintain at most <n> connections to peers (default: 125)") + "\n" +
         "  -addnode=<ip>          " + _("Add a node to connect to and attempt to keep the connection open") + "\n" +
         "  -connect=<ip>          " + _("Connect only to the specified node(s)") + "\n" +
@@ -340,6 +357,7 @@ std::string HelpMessage()
         "  -daemon                " + _("Run in the background as a daemon and accept commands") + "\n" +
 #endif
         "  -testnet               " + _("Use the test network") + "\n" +
+        "  -cakenet               " + _("Use the cake network") + "\n" +
         "  -debug                 " + _("Output extra debugging information. Implies all other -debug* options") + "\n" +
         "  -debugnet              " + _("Output extra network debugging information") + "\n" +
         "  -logtimestamps         " + _("Prepend debug output with timestamp (default: 1)") + "\n" +
@@ -350,7 +368,7 @@ std::string HelpMessage()
 #endif
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
-        "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 23327 or testnet: 33327)") + "\n" +
+        "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 8368, testnet: 18368, cakenet: 28368)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
 #ifndef QT_GUI
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
@@ -375,7 +393,7 @@ std::string HelpMessage()
         "  -blockmaxsize=<n>      "   + _("Set maximum block size in bytes (default: 250000)") + "\n" +
         "  -blockprioritysize=<n> "   + _("Set maximum size of high-priority/low-fee transactions in bytes (default: 27000)") + "\n" +
 
-        "\n" + _("SSL options: (see the UnitedScryptCoin Wiki for SSL setup instructions)") + "\n" +
+        "\n" + _("SSL options: (see the Syscoin Wiki for SSL setup instructions)") + "\n" +
         "  -rpcssl                                  " + _("Use OpenSSL (https) for JSON-RPC connections") + "\n" +
         "  -rpcsslcertificatechainfile=<file.cert>  " + _("Server certificate file (default: server.cert)") + "\n" +
         "  -rpcsslprivatekeyfile=<file.pem>         " + _("Server private key (default: server.pem)") + "\n" +
@@ -503,6 +521,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     // ********************************************************* Step 2: parameter interactions
 
     fTestNet = GetBoolArg("-testnet");
+    fCakeNet = GetBoolArg("-cakenet");
     fBloomFilters = GetBoolArg("-bloomfilters", true);
     if (fBloomFilters)
         nLocalServices |= NODE_BLOOM;
@@ -552,7 +571,7 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     // ********************************************************* Step 3: parameter-to-internal-flags
 
-    fDebug = GetBoolArg("-debug");
+    fDebug = GetBoolArg("-debug", true);
     fBenchmark = GetBoolArg("-benchmark");
 
     // -par=0 means autodetect, but nScriptCheckThreads==0 means no concurrency
@@ -644,12 +663,12 @@ bool AppInit2(boost::thread_group& threadGroup)
     if (file) fclose(file);
     static boost::interprocess::file_lock lock(pathLockFile.string().c_str());
     if (!lock.try_lock())
-        return InitError(strprintf(_("Cannot obtain a lock on data directory %s. UnitedScryptCoin is probably already running."), strDataDir.c_str()));
+        return InitError(strprintf(_("Cannot obtain a lock on data directory %s. Syscoin is probably already running."), strDataDir.c_str()));
 
     if (GetBoolArg("-shrinkdebugfile", !fDebug))
         ShrinkDebugFile();
     printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-    printf("UnitedScryptCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
+    printf("Syscoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
     printf("Using OpenSSL version %s\n", SSLeay_version(SSLEAY_VERSION));
     if (!fLogTimestamps)
         printf("Startup time: %s\n", DateTimeStrFormat("%Y-%m-%d %H:%M:%S", GetTime()).c_str());
@@ -659,7 +678,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     std::ostringstream strErrors;
 
     if (fDaemon)
-        fprintf(stdout, "UnitedScryptCoin server starting\n");
+        fprintf(stdout, "Syscoin server starting\n");
 
     if (nScriptCheckThreads) {
         printf("Using %u threads for script verification\n", nScriptCheckThreads);
@@ -855,12 +874,13 @@ bool AppInit2(boost::thread_group& threadGroup)
     if (nTotalCache < (1 << 22))
         nTotalCache = (1 << 22); // total cache cannot be less than 4 MiB
     size_t nBlockTreeDBCache = nTotalCache / 8;
-    if (nBlockTreeDBCache > (1 << 21) && !GetBoolArg("-txindex", false))
+    if (nBlockTreeDBCache > (1 << 21) && !GetBoolArg("-txindex", true))
         nBlockTreeDBCache = (1 << 21); // block tree db cache shouldn't be larger than 2 MiB
     nTotalCache -= nBlockTreeDBCache;
     size_t nCoinDBCache = nTotalCache / 2; // use half of the remaining cache for coindb cache
     nTotalCache -= nCoinDBCache;
     nCoinCacheSize = nTotalCache / 300; // coins in memory require around 300 bytes
+    size_t nNameDBCache = nCoinCacheSize;
 
     bool fLoaded = false;
     while (!fLoaded) {
@@ -876,10 +896,15 @@ bool AppInit2(boost::thread_group& threadGroup)
                 delete pcoinsTip;
                 delete pcoinsdbview;
                 delete pblocktree;
+                delete paliasdb;
+                delete pcertdb;
 
                 pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, fReindex);
                 pcoinsdbview = new CCoinsViewDB(nCoinDBCache, false, fReindex);
                 pcoinsTip = new CCoinsViewCache(*pcoinsdbview);
+                paliasdb = new CAliasDB(nNameDBCache, false, fReindex);
+                pofferdb = new COfferDB(nNameDBCache*2, false, fReindex);
+                pcertdb = new CCertDB(nNameDBCache*2, false, fReindex);
 
                 if (fReindex)
                     pblocktree->WriteReindexing(true);
@@ -901,13 +926,13 @@ bool AppInit2(boost::thread_group& threadGroup)
                 }
 
                 // Check for changed -txindex state
-                if (fTxIndex != GetBoolArg("-txindex", false)) {
+                if (fTxIndex != GetBoolArg("-txindex", true)) {
                     strLoadError = _("You need to rebuild the database using -reindex to change -txindex");
                     break;
                 }
 
                 uiInterface.InitMessage(_("Verifying blocks..."));
-                if (!VerifyDB(GetArg("-checklevel", 3),
+                if (!VerifyDB(GetArg("-checklevel", 4),
                               GetArg( "-checkblocks", 288))) {
                     strLoadError = _("Corrupted block database detected");
                     break;
@@ -1000,10 +1025,10 @@ bool AppInit2(boost::thread_group& threadGroup)
                 InitWarning(msg);
             }
             else if (nLoadWalletRet == DB_TOO_NEW)
-                strErrors << _("Error loading wallet.dat: Wallet requires newer version of UnitedScryptCoin") << "\n";
+                strErrors << _("Error loading wallet.dat: Wallet requires newer version of Syscoin") << "\n";
             else if (nLoadWalletRet == DB_NEED_REWRITE)
             {
-                strErrors << _("Wallet needed to be rewritten: restart UnitedScryptCoin to complete") << "\n";
+                strErrors << _("Wallet needed to be rewritten: restart Syscoin to complete") << "\n";
                 printf("%s", strErrors.str().c_str());
                 return InitError(strErrors.str());
             }
@@ -1050,8 +1075,7 @@ bool AppInit2(boost::thread_group& threadGroup)
         CBlockIndex *pindexRescan = pindexBest;
         if (GetBoolArg("-rescan"))
             pindexRescan = pindexGenesisBlock;
-        else
-        {
+        else {
             CWalletDB walletdb("wallet.dat");
             CBlockLocator locator;
             if (walletdb.ReadBestBlock(locator))
@@ -1059,14 +1083,15 @@ bool AppInit2(boost::thread_group& threadGroup)
             else
                 pindexRescan = pindexGenesisBlock;
         }
-        if (pindexBest && pindexBest != pindexRescan)
-        {
+        if (pindexBest && pindexBest != pindexRescan) {
             uiInterface.InitMessage(_("Rescanning..."));
             printf("Rescanning last %i blocks (from block %i)...\n", pindexBest->nHeight - pindexRescan->nHeight, pindexRescan->nHeight);
             nStart = GetTimeMillis();
             pwalletMain->ScanForWalletTransactions(pindexRescan, true);
             printf(" rescan      %15"PRI64d"ms\n", GetTimeMillis() - nStart);
             pwalletMain->SetBestChain(CBlockLocator(pindexBest));
+    		rescanforaliases(pindexRescan);
+    		rescanforoffers(pindexRescan);
             nWalletDBUpdated++;
         }
     } // (!fDisableWallet)

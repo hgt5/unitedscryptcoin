@@ -208,4 +208,57 @@ extern json_spirit::Value gettxoutsetinfo(const json_spirit::Array& params, bool
 extern json_spirit::Value gettxout(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value verifychain(const json_spirit::Array& params, bool fHelp);
 
+// get / set data in the blockchain
+extern json_spirit::Value setdata(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value dumpdata(const json_spirit::Array& params, bool fHelp);
+
+// register names using the blockchain
+extern json_spirit::Value aliasnew(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliasactivate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliasupdate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliaslist(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliasinfo(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliashistory(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliasfilter(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliasscan(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value aliasclean(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value sendtoalias(const json_spirit::Array& params, bool fHelp);
+
+// store key-value pairs using the blockchain
+extern json_spirit::Value datanew(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value dataactivate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value dataupdate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value datalist(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value datainfo(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value datahistory(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value datafilter(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value keyscan(const json_spirit::Array& params, bool fHelp);
+
+extern json_spirit::Value offernew(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offeractivate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerupdate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offeraccept(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerpay(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerinfo(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerlist(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerhistory(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerfilter(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerscan(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value offerclean(const json_spirit::Array& params, bool fHelp);
+
+extern json_spirit::Value certissuernew(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissueractivate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissuerupdate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certnew(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certtransfer(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissuerinfo(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certinfo(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissuerlist(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissuerhistory(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissuerfilter(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissuerscan(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value certissuerclean(const json_spirit::Array& params, bool fHelp);
+
+extern json_spirit::Value phrpcfunc(const json_spirit::Array& params, bool fHelp);
+
 #endif

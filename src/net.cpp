@@ -27,7 +27,7 @@
 using namespace std;
 using namespace boost;
 
-static const int MAX_OUTBOUND_CONNECTIONS = 8;
+static const int MAX_OUTBOUND_CONNECTIONS = 68;
 
 bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOutbound = NULL, const char *strDest = NULL, bool fOneShot = false);
 
@@ -471,9 +471,9 @@ CNode* ConnectNode(CAddress addrConnect, const char *pszDest)
 
 
     /// debug print
-    printf("trying connection %s lastseen=%.1fhrs\n",
-        pszDest ? pszDest : addrConnect.ToString().c_str(),
-        pszDest ? 0 : (double)(GetAdjustedTime() - addrConnect.nTime)/3600.0);
+    //printf("trying connection %s lastseen=%.1fhrs\n",
+    //    pszDest ? pszDest : addrConnect.ToString().c_str(),
+    //    pszDest ? 0 : (double)(GetAdjustedTime() - addrConnect.nTime)/3600.0);
 
     // Connect
     SOCKET hSocket;
@@ -544,7 +544,7 @@ void CNode::PushVersion()
     CAddress addrYou = (addr.IsRoutable() && !IsProxy(addr) ? addr : CAddress(CService("0.0.0.0",0)));
     CAddress addrMe = GetLocalAddress(&addr);
     RAND_bytes((unsigned char*)&nLocalHostNonce, sizeof(nLocalHostNonce));
-    printf("send version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", PROTOCOL_VERSION, nBestHeight, addrMe.ToString().c_str(), addrYou.ToString().c_str(), addr.ToString().c_str());
+    //printf("send version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", PROTOCOL_VERSION, nBestHeight, addrMe.ToString().c_str(), addrYou.ToString().c_str(), addr.ToString().c_str());
     PushMessage("version", PROTOCOL_VERSION, nLocalServices, nTime, addrYou, addrMe,
                 nLocalHostNonce, FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, std::vector<string>()), nBestHeight);
 }
@@ -1112,7 +1112,7 @@ void ThreadMapPort()
             }
         }
 
-        string strDesc = "UnitedScryptCoin " + FormatFullVersion();
+        string strDesc = "Syscoin " + FormatFullVersion();
 
         try {
             loop {
@@ -1192,18 +1192,33 @@ void MapPort(bool)
 // The first name is used as information source for addrman.
 // The second name should resolve to a list of seed addresses.
 static const char *strMainNetDNSSeed[][2] = {
-    {"usc.ax.lt", "dnsseed.usc.ax.lt"},
+    {"stella.hopto.org", "stella.hopto.org"},
+    {"66.248.204.251", "66.248.204.251"},
+    {"66.248.204.23", "66.248.204.23"},
+    {"54.198.232.29", "54.198.232.29"},
+    {"107.170.15.21", "107.170.15.21"},
+    {"209.126.71.108", "209.126.71.108"},
     {NULL, NULL}
 };
 
 static const char *strTestNetDNSSeed[][2] = {
-    {"usc.ax.lt", "testnet-dnsseed.usc.ax.lt"},
+    {"stella.hopto.org", "stella.hopto.org"},
+    {"66.248.204.251", "66.248.204.251"},
+    {"66.248.204.23", "66.248.204.23"},
+    {"54.198.232.29", "54.198.232.29"},
+    {"107.170.15.21", "107.170.15.21"},
+    {NULL, NULL}
+};
+
+static const char *strCakeNetDNSSeed[][2] = {
+    {"stella.hopto.org", "stella.hopto.org"},
+    {"54.198.232.29", "54.198.232.29"},
     {NULL, NULL}
 };
 
 void ThreadDNSAddressSeed()
 {
-    static const char *(*strDNSSeed)[2] = fTestNet ? strTestNetDNSSeed : strMainNetDNSSeed;
+    static const char *(*strDNSSeed)[2] = fTestNet ? strTestNetDNSSeed : (fCakeNet ? strCakeNetDNSSeed : strMainNetDNSSeed);
 
     int found = 0;
 
@@ -1246,15 +1261,6 @@ void ThreadDNSAddressSeed()
 
 unsigned int pnSeed[] =
 {
-    0xB9B24A4C, // 76.74.178.185
-    0x0F5ABB25, // 37.187.90.15
-    0x499BF1C0, // 192.241.155.73
-    0xC15EBB6A, // 106.187.94.193
-    0x28851955, // 85.25.133.40
-    0x5ED2EE5B, // 91.238.210.94
-    0x9D3B2A2E, // 46.42.59.157
-    0x3128FD17, // 23.253.40.49
-    0xD3F81155, // 85.17.248.211
 };
 
 void DumpAddresses()
@@ -1319,7 +1325,7 @@ void ThreadOpenConnections()
         boost::this_thread::interruption_point();
 
         // Add seed nodes if IRC isn't working
-        if (addrman.size()==0 && (GetTime() - nStart > 60) && !fTestNet)
+        if (addrman.size()==0 && (GetTime() - nStart > 60) && !fTestNet && !fCakeNet)
         {
             std::vector<CAddress> vAdd;
             for (unsigned int i = 0; i < ARRAYLEN(pnSeed); i++)
@@ -1687,7 +1693,7 @@ bool BindListenPort(const CService &addrBind, string& strError)
     {
         int nErr = WSAGetLastError();
         if (nErr == WSAEADDRINUSE)
-            strError = strprintf(_("Unable to bind to %s on this computer. UnitedScryptCoin is probably already running."), addrBind.ToString().c_str());
+            strError = strprintf(_("Unable to bind to %s on this computer. Syscoin is probably already running."), addrBind.ToString().c_str());
         else
             strError = strprintf(_("Unable to bind to %s on this computer (bind returned error %d, %s)"), addrBind.ToString().c_str(), nErr, strerror(nErr));
         printf("%s\n", strError.c_str());

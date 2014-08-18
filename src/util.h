@@ -76,6 +76,8 @@ static const int64 CENT = 1000000;
 
 // This is needed because the foreach macro can't get over the comma in pair<t1, t2>
 #define PAIRTYPE(t1, t2)    std::pair<t1, t2>
+#define MAPTYPE(t1, t2)    std::map<t1, t2>
+#define VECTYPE(t1)    std::vector<t1>
 
 // Align by increasing pointer, must have extra space at end of buffer
 template <size_t nBytes, typename T>
@@ -144,6 +146,7 @@ extern bool fServer;
 extern bool fCommandLine;
 extern std::string strMiscWarning;
 extern bool fTestNet;
+extern bool fCakeNet;
 extern bool fBloomFilters;
 extern bool fNoListen;
 extern bool fLogTimestamps;

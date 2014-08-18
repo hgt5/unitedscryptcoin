@@ -30,6 +30,8 @@ using namespace boost;
 using namespace boost::asio;
 using namespace json_spirit;
 
+template<typename T>void ConvertTo(Value& value, bool fAllowNull=false);
+
 static std::string strRPCUserColonPass;
 
 // These are created by StartRPCThreads, destroyed in StopRPCThreads
@@ -39,7 +41,9 @@ static boost::thread_group* rpc_worker_group = NULL;
 
 static inline unsigned short GetDefaultRPCPort()
 {
-    return GetBoolArg("-testnet", false) ? 23327 : 33327;
+    if(GetBoolArg("-testnet", false)) return 18368;
+    else if(GetBoolArg("-cakenet", false)) return 28368;
+    else return 8368;
 }
 
 Object JSONRPCError(int code, const string& message)
@@ -93,7 +97,7 @@ void RPCTypeCheck(const Object& o,
 int64 AmountFromValue(const Value& value)
 {
     double dAmount = value.get_real();
-    if (dAmount <= 0.0 || dAmount > 84000000.0)
+    if (dAmount <= 0.0 || dAmount > 268824600.0)
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid amount");
     int64 nAmount = roundint64(dAmount * COIN);
     if (!MoneyRange(nAmount))
@@ -182,10 +186,10 @@ Value stop(const Array& params, bool fHelp)
     if (fHelp || params.size() > 1)
         throw runtime_error(
             "stop\n"
-            "Stop UnitedScryptCoin server.");
+            "Stop Syscoin server.");
     // Shutdown will take long enough that the response should get back
     StartShutdown();
-    return "UnitedScryptCoin server stopping";
+    return "Syscoin server stopping";
 }
 
 
@@ -267,6 +271,73 @@ static const CRPCCommand vRPCCommands[] =
     { "lockunspent",            &lockunspent,            false,     false,      true },
     { "listlockunspent",        &listlockunspent,        false,     false,      true },
     { "verifychain",            &verifychain,            true,      false,      false },
+	
+    // store data in the blockchain
+	{ "dumpdata",           &dumpdata,           false,      false,      true },
+	{ "setdata",            &setdata,            false,      false,      true },
+
+	// use the blockchain to register namespaced aliases
+    { "aliasnew",          &aliasnew,          false,      false,      true },
+    { "aliasactivate",     &aliasactivate,     false,      false,      true },
+    { "aliasupdate",       &aliasupdate,       false,      false,      true },
+    { "aliaslist",         &aliaslist,         false,      false,      true },
+    { "aliasinfo",         &aliasinfo,         false,      false,      true },
+    { "aliashistory",      &aliashistory,      false,      false,      true },
+    { "aliasfilter",       &aliasfilter,       false,      false,      true },
+    { "aliasscan",         &aliasscan,         false,      false,      true },
+    { "aliasclean",        &aliasclean,         false,      false,      true },
+    { "sendtoalias",       &sendtoalias,       false,      false,      true },
+
+	// use the blockchain to store provably-ownable data
+    { "datanew",          &datanew,         false,      false,      true },
+    { "dataactivate",     &dataactivate,    false,      false,      true },
+    { "dataupdate",       &dataupdate,      false,      false,      true },
+    { "datalist",         &datalist,        false,      false,      true },
+    { "datainfo",         &datainfo,        false,      false,      true },
+    { "datahistory",      &datahistory,     false,      false,      true },
+    { "datafiler",        &datafilter,      false,      false,      true },
+
+    // use the blockchain as a distributed marketplace
+    { "offernew",         &offernew,     false,      false,      true },
+    { "offeractivate",    &offeractivate,false,      false,      true },
+    { "offerupdate",      &offerupdate,  false,      false,      true },
+    { "offeraccept",      &offeraccept,  false,      false,      true },
+    { "offerpay",         &offerpay,     false,      false,      true },
+    { "offerlist",        &offerlist,    false,      false,      true },
+    { "offerinfo",        &offerinfo,    false,      false,      true },
+    { "offerhistory",     &offerhistory, false,      false,      true },
+    { "offerscan",        &offerscan,    false,      false,      true },
+    { "offerclean",       &offerclean,    false,      false,      true },
+    { "offerfilter",      &offerfilter,  false,      false,      true },
+
+  // use the blockchain as a certificate issuance platform
+  { "certissuernew",         &certissuernew,     false,      false,      true },
+  { "certissueractivate",    &certissueractivate,false,      false,      true },
+  { "certissuerupdate",      &certissuerupdate,  false,      false,      true },
+  { "certnew",               &certnew,           false,      false,      true },
+  { "certtransfer",          &certtransfer,      false,      false,      true },
+  { "certissuerlist",        &certissuerlist,    false,      false,      true },
+  { "certissuerinfo",        &certissuerinfo,    false,      false,      true },
+  { "certinfo",              &certinfo,          false,      false,      true },
+  { "certissuerhistory",     &certissuerhistory, false,      false,      true },
+  { "certissuerscan",        &certissuerscan,    false,      false,      true },
+  { "certissuerclean",       &certissuerclean,   false,      false,      true },
+  { "certissuerfilter",      &certissuerfilter,  false,      false,      true },
+
+  // use the blockchain as a platform for escrow transactions
+  { "escrownew",       &phrpcfunc,     false,      false,      true },
+  { "escrowcancel",    &phrpcfunc,false,      false,      true },
+  { "escrowaccept",    &phrpcfunc,  false,      false,      true },
+  { "escrowreject",    &phrpcfunc,           false,      false,      true },
+  { "escrowrelease",   &phrpcfunc,      false,      false,      true },
+  { "escrowextend",    &phrpcfunc,      false,      false,      true },
+  { "escrowburn",      &phrpcfunc,      false,      false,      true },
+  { "escrowlist",      &phrpcfunc,    false,      false,      true },
+  { "escrowinfo",      &phrpcfunc,    false,      false,      true },
+  { "escrowhistory",   &phrpcfunc, false,      false,      true },
+  { "escrowscan",      &phrpcfunc,    false,      false,      true },
+  { "escrowfilter",    &phrpcfunc,  false,      false,      true },
+
 };
 
 CRPCTable::CRPCTable()
@@ -300,7 +371,7 @@ string HTTPPost(const string& strMsg, const map<string,string>& mapRequestHeader
 {
     ostringstream s;
     s << "POST / HTTP/1.1\r\n"
-      << "User-Agent: unitedscryptcoin-json-rpc/" << FormatFullVersion() << "\r\n"
+      << "User-Agent: syscoin-json-rpc/" << FormatFullVersion() << "\r\n"
       << "Host: 127.0.0.1\r\n"
       << "Content-Type: application/json\r\n"
       << "Content-Length: " << strMsg.size() << "\r\n"
@@ -331,7 +402,7 @@ static string HTTPReply(int nStatus, const string& strMsg, bool keepalive)
     if (nStatus == HTTP_UNAUTHORIZED)
         return strprintf("HTTP/1.0 401 Authorization Required\r\n"
             "Date: %s\r\n"
-            "Server: unitedscryptcoin-json-rpc/%s\r\n"
+            "Server: syscoin-json-rpc/%s\r\n"
             "WWW-Authenticate: Basic realm=\"jsonrpc\"\r\n"
             "Content-Type: text/html\r\n"
             "Content-Length: 296\r\n"
@@ -358,7 +429,7 @@ static string HTTPReply(int nStatus, const string& strMsg, bool keepalive)
             "Connection: %s\r\n"
             "Content-Length: %"PRIszu"\r\n"
             "Content-Type: application/json\r\n"
-            "Server: unitedscryptcoin-json-rpc/%s\r\n"
+            "Server: syscoin-json-rpc/%s\r\n"
             "\r\n"
             "%s",
         nStatus,
@@ -738,7 +809,7 @@ void StartRPCThreads()
     {
         unsigned char rand_pwd[32];
         RAND_bytes(rand_pwd, 32);
-        string strWhatAmI = "To use unitedscryptcoind";
+        string strWhatAmI = "To use syscoind";
         if (mapArgs.count("-server"))
             strWhatAmI = strprintf(_("To use the %s option"), "\"-server\"");
         else if (mapArgs.count("-daemon"))
@@ -747,13 +818,13 @@ void StartRPCThreads()
             _("%s, you must set a rpcpassword in the configuration file:\n"
               "%s\n"
               "It is recommended you use the following random password:\n"
-              "rpcuser=unitedscryptcoinrpc\n"
+              "rpcuser=syscoinrpc\n"
               "rpcpassword=%s\n"
               "(you do not need to remember this password)\n"
               "The username and password MUST NOT be the same.\n"
               "If the file does not exist, create it with owner-readable-only file permissions.\n"
               "It is also recommended to set alertnotify so you are notified of problems;\n"
-              "for example: alertnotify=echo %%s | mail -s \"UnitedScryptCoin Alert\" admin@foo.com\n"),
+              "for example: alertnotify=echo %%s | mail -s \"Syscoin Alert\" admin@foo.com\n"),
                 strWhatAmI.c_str(),
                 GetConfigFile().string().c_str(),
                 EncodeBase58(&rand_pwd[0],&rand_pwd[0]+32).c_str()),
@@ -1115,7 +1186,7 @@ Object CallRPC(const string& strMethod, const Array& params)
 
 
 template<typename T>
-void ConvertTo(Value& value, bool fAllowNull=false)
+void ConvertTo(Value& value, bool fAllowNull)
 {
     if (fAllowNull && value.type() == null_type)
         return;

@@ -17,6 +17,9 @@
 #include "ui_interface.h"
 #include "util.h"
 #include "walletdb.h"
+#include "alias.h"
+#include "offer.h"
+#include "cert.h"
 
 class CAccountingEntry;
 class CWalletTx;
@@ -69,8 +72,6 @@ public:
 class CWallet : public CCryptoKeyStore
 {
 private:
-    bool SelectCoins(int64 nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet, const CCoinControl *coinControl=NULL) const;
-
     CWalletDB *pwalletdbEncryption;
 
     // the current wallet version: clients below this version are not able to load the wallet
@@ -80,6 +81,8 @@ private:
     int nWalletMaxVersion;
 
 public:
+    bool SelectCoins(int64 nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet, const CCoinControl *coinControl=NULL) const;
+
     mutable CCriticalSection cs_wallet;
 
     bool fFileBacked;
@@ -180,12 +183,15 @@ public:
     int64 GetUnconfirmedBalance() const;
     int64 GetImmatureBalance() const;
     bool CreateTransaction(const std::vector<std::pair<CScript, int64> >& vecSend,
-                           CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason, const CCoinControl *coinControl=NULL);
+                           CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason, 
+						   const CCoinControl *coinControl=NULL, const std::string &txData="");
     bool CreateTransaction(CScript scriptPubKey, int64 nValue,
-                           CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason, const CCoinControl *coinControl=NULL);
+                           CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason, 
+						   const CCoinControl *coinControl=NULL, const std::string &txData="");
     bool CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey);
-    std::string SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, bool fAskFee=false);
-    std::string SendMoneyToDestination(const CTxDestination &address, int64 nValue, CWalletTx& wtxNew, bool fAskFee=false);
+    std::string SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, bool fAskFee=false, const std::string &txData="");
+    std::string SendMoneyToDestination(const CTxDestination &address, int64 nValue, CWalletTx& wtxNew, bool fAskFee=false, const std::string &txData="");
+    std::string SendData(CWalletTx& wtxNew, bool fAskFee, const std::string& txData);
 
     bool NewKeyPool();
     bool TopUpKeyPool();
@@ -202,6 +208,8 @@ public:
 
     bool IsMine(const CTxIn& txin) const;
     int64 GetDebit(const CTxIn& txin) const;
+    int64 GetDebitInclName(const CTxIn& txin) const;
+    int64 GetDebitInclName(const CTransaction& txin) const;
     bool IsMine(const CTxOut& txout) const
     {
         return ::IsMine(*this, txout.scriptPubKey);
@@ -224,11 +232,12 @@ public:
         BOOST_FOREACH(const CTxOut& txout, tx.vout)
             if (IsMine(txout) && txout.nValue >= nMinimumInputValue)
                 return true;
+        if (IsAliasMine(tx)||IsOfferMine(tx)||IsCertMine(tx)) return true;
         return false;
     }
     bool IsFromMe(const CTransaction& tx) const
     {
-        return (GetDebit(tx) > 0);
+        return (GetDebitInclName(tx) > 0);
     }
     int64 GetDebit(const CTransaction& tx) const
     {
@@ -308,6 +317,21 @@ public:
      */
     boost::signals2::signal<void (CWallet *wallet, const CTxDestination &address, const std::string &label, bool isMine, ChangeType status)> NotifyAddressBookChanged;
 
+    /** Alias list entry changed.
+     * @note called with lock cs_wallet held.
+     */
+    boost::signals2::signal<void (CWallet *wallet, const CTransaction *txn,  CAliasIndex &alias, ChangeType status)> NotifyAliasListChanged;
+
+    /** Offer list entry changed.
+     * @note called with lock cs_wallet held.
+     */
+    boost::signals2::signal<void (CWallet *wallet, const CTransaction *txn,  COffer &offer, ChangeType status)> NotifyOfferListChanged;
+
+    /** Cert list entry changed.
+     * @note called with lock cs_wallet held.
+     */
+    boost::signals2::signal<void (CWallet *wallet, const CTransaction *txn,  CCertIssuer &certi, ChangeType status)> NotifyCertIssuerListChanged;
+
     /** Wallet transaction added, removed or updated.
      * @note called with lock cs_wallet held.
      */
@@ -382,12 +406,12 @@ public:
     int64 nOrderPos;  // position in ordered transaction list
 
     // memory only
-    mutable bool fDebitCached;
+    mutable bool fDebitCached,fDebitInclNameCached;
     mutable bool fCreditCached;
     mutable bool fImmatureCreditCached;
     mutable bool fAvailableCreditCached;
     mutable bool fChangeCached;
-    mutable int64 nDebitCached;
+    mutable int64 nDebitCached,nDebitInclNameCached;
     mutable int64 nCreditCached;
     mutable int64 nImmatureCreditCached;
     mutable int64 nAvailableCreditCached;
@@ -562,6 +586,17 @@ public:
         return nDebitCached;
     }
 
+    int64 GetDebitInclName() const
+    {
+        if (vin.empty())
+            return 0;
+        if (fDebitInclNameCached)
+            return nDebitInclNameCached;
+        nDebitInclNameCached = pwallet->GetDebitInclName(*this);
+        fDebitInclNameCached = true;
+        return nDebitInclNameCached;
+    }
+
     int64 GetCredit(bool fUseCache=true) const
     {
         // Must wait until coinbase is safely deep enough in the chain before valuing it
@@ -627,14 +662,14 @@ public:
     }
 
     void GetAmounts(std::list<std::pair<CTxDestination, int64> >& listReceived,
-                    std::list<std::pair<CTxDestination, int64> >& listSent, int64& nFee, std::string& strSentAccount) const;
+                    std::list<std::pair<CTxDestination, int64> >& listSent, int64& nFee, std::string& strSentAccount, bool &fNameTx) const;
 
     void GetAccountAmounts(const std::string& strAccount, int64& nReceived,
                            int64& nSent, int64& nFee) const;
 
     bool IsFromMe() const
     {
-        return (GetDebit() > 0);
+        return (GetDebitInclName() > 0);
     }
 
     bool IsConfirmed() const

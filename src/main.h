@@ -18,7 +18,6 @@ class CBlock;
 class CBlockIndex;
 class CKeyItem;
 class CReserveKey;
-
 class CAddress;
 class CInv;
 class CNode;
@@ -27,19 +26,21 @@ class CAuxPow;
 struct CBlockIndexWorkComparator;
 
 /** The maximum allowed size for a serialized block, in bytes (network rule) */
-static const unsigned int MAX_BLOCK_SIZE = 1000000;                      // 1000KB block hard limit
+static const unsigned int MAX_BLOCK_SIZE = (2 * 1024 * 1024);
 /** Obsolete: maximum size for mined blocks */
-static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/4;         // 250KB  block soft limit
+static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;         // 250KB  block soft limit
 /** Default for -blockmaxsize, maximum size for mined blocks **/
-static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 250000;
+static const unsigned int DEFAULT_BLOCK_MAX_SIZE = MAX_BLOCK_SIZE_GEN;
 /** Default for -blockprioritysize, maximum space for zero/low-fee transactions **/
-static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = 17000;
+static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = MAX_BLOCK_SIZE_GEN;
 /** The maximum size for transactions we're willing to relay/mine */
-static const unsigned int MAX_STANDARD_TX_SIZE = 100000;
+static const unsigned int MAX_STANDARD_TX_SIZE = MAX_BLOCK_SIZE_GEN/2;
 /** The maximum allowed number of signature check operations in a block (network rule) */
 static const unsigned int MAX_BLOCK_SIGOPS = MAX_BLOCK_SIZE/50;
 /** The maximum number of orphan transactions kept in memory */
 static const unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
+/** The maximum data payload size per transaction **/
+static const unsigned int MAX_TX_DATA_SIZE = MAX_BLOCK_SIZE/8;
 /** The maximum number of entries in an 'inv' protocol message */
 static const unsigned int MAX_INV_SZ = 50000;
 /** The maximum size of a blk?????.dat file (since 0.8) */
@@ -48,17 +49,20 @@ static const unsigned int MAX_BLOCKFILE_SIZE = 0x8000000; // 128 MiB
 static const unsigned int BLOCKFILE_CHUNK_SIZE = 0x1000000; // 16 MiB
 /** The pre-allocation chunk size for rev?????.dat files (since 0.8) */
 static const unsigned int UNDOFILE_CHUNK_SIZE = 0x100000; // 1 MiB
-/** Fake height value used in CCoins to signify they are only in the memory pool (since 0.8) */
+/** Fake height value used in coins to signify they are only in the memory pool (since 0.8) */
 static const unsigned int MEMPOOL_HEIGHT = 0x7FFFFFFF;
 /** Dust Soft Limit, allowed with additional fee per output */
-static const int64 DUST_SOFT_LIMIT = 100000; // 0.001 USC
+static const int64 DUST_SOFT_LIMIT = COIN * 10; // 0.001 
 /** Dust Hard Limit, ignored as wallet inputs (mininput default) */
-static const int64 DUST_HARD_LIMIT = 1000;   // 0.00001 USC mininput
+static const int64 DUST_HARD_LIMIT = COIN;   // 0.00001  mininput
 /** No amount larger than this (in satoshi) is valid */
-static const int64 MAX_MONEY = 84000000 * COIN;
+static const int64 MAX_MONEY = 2000000000 * COIN;
 inline bool MoneyRange(int64 nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
+static const int64 MIN_TX_FEE = (5 * CENT);
+static const int64 MIN_RELAY_TX_FEE = MIN_TX_FEE;
+static const int64 MIN_TXOUT_AMOUNT = MIN_TX_FEE;
 /** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
-static const int COINBASE_MATURITY = 100;
+static const int COINBASE_MATURITY = 60;
 /** Threshold for nLockTime: below this value it is interpreted as block number, otherwise as UNIX timestamp. */
 static const unsigned int LOCKTIME_THRESHOLD = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 /** Maximum number of script-checking threads allowed */
@@ -69,13 +73,9 @@ static const int fHaveUPnP = true;
 static const int fHaveUPnP = false;
 #endif
 
-
 extern CScript COINBASE_FLAGS;
 
-
-
-
-
+#define MAPTESTPOOLTYPE pair<vector<unsigned char>, uint256>
 
 extern CCriticalSection cs_main;
 extern std::map<uint256, CBlockIndex*> mapBlockIndex;
@@ -111,7 +111,9 @@ extern int64 nMinimumInputValue;
 // Minimum disk space required - used in CheckDiskSpace()
 static const uint64 nMinDiskSpace = 52428800;
 
-
+class CWalletTx;
+class CDiskTxPos;
+class CTxOut;
 class CReserveKey;
 class CCoinsDB;
 class CBlockTreeDB;
@@ -195,20 +197,11 @@ bool VerifySignature(const CCoins& txFrom, const CTransaction& txTo, unsigned in
 /** Abort with a message */
 bool AbortNode(const std::string &msg);
 
-
-
-
-
-
-
-
-
-
-
 bool GetWalletFile(CWallet* pwallet, std::string &strWalletFileOut);
 
-struct CDiskBlockPos
-{
+std::string stringFromVch(const std::vector<unsigned char> &vch);
+
+struct CDiskBlockPos {
     int nFile;
     unsigned int nPos;
 
@@ -453,8 +446,6 @@ public:
 
     std::string ToString() const
     {
-        if (scriptPubKey.size() < 6)
-            return "CTxOut(error)";
         return strprintf("CTxOut(nValue=%"PRI64d".%08"PRI64d", scriptPubKey=%s)", nValue / COIN, nValue % COIN, scriptPubKey.ToString().substr(0,30).c_str());
     }
 
@@ -465,6 +456,7 @@ public:
 };
 
 
+extern std::map<std::vector<unsigned char>, uint256> dummyTestPool;
 
 enum GetMinFee_mode
 {
@@ -473,6 +465,7 @@ enum GetMinFee_mode
     GMF_SEND,
 };
 
+int64 GetFeeAssign();
 /** The basic transaction that is broadcasted on the network and contained in
  * blocks. A transaction can contain multiple inputs and outputs.
  */
@@ -486,6 +479,7 @@ public:
     std::vector<CTxIn> vin;
     std::vector<CTxOut> vout;
     unsigned int nLockTime;
+    std::vector<unsigned char> data;
 
     CTransaction()
     {
@@ -499,6 +493,8 @@ public:
         READWRITE(vin);
         READWRITE(vout);
         READWRITE(nLockTime);
+		if (!(nType & SER_GETAUXPOW))
+			READWRITE(data);
     )
 
     void SetNull()
@@ -507,6 +503,7 @@ public:
         vin.clear();
         vout.clear();
         nLockTime = 0;
+        data.clear();
     }
 
     bool IsNull() const
@@ -517,6 +514,14 @@ public:
     uint256 GetHash() const
     {
         return SerializeHash(*this);
+    }
+
+    std::string GetBase64Data() const {
+        return stringFromVch(data);
+    }
+
+    std::string GetData() const {
+        return DecodeBase64(stringFromVch(data));
     }
 
     bool IsFinal(int nBlockHeight=0, int64 nBlockTime=0) const
@@ -613,6 +618,7 @@ public:
         return nValueOut;
     }
 
+
     /** Amount of bitcoins coming in to this transaction
         Note that lightweight clients may not know anything besides the hash of previous transactions,
         so may not be able to calculate this.
@@ -626,14 +632,35 @@ public:
     {
         // Large (in bytes) low-priority (new, small-coin) transactions
         // need a fee.
-        return dPriority > COIN * 576 / 250;
+        return dPriority > COIN * 1440 / 250;
     }
 
-// Apply the effects of this transaction on the UTXO set represented by view
-void UpdateCoins(const CTransaction& tx, CValidationState &state, CCoinsViewCache &inputs, CTxUndo &txundo, int nHeight, const uint256 &txhash);
+    // Apply the effects of this transaction on the UTXO set represented by view
+    void UpdateCoins(const CTransaction& tx, CValidationState &state, CCoinsViewCache &inputs, CTxUndo &txundo, int nHeight, const uint256 &txhash);
 
     int64 GetMinFee(unsigned int nBlockSize=1, bool fAllowFree=true, enum GetMinFee_mode mode=GMF_BLOCK) const;
 
+    // TODO This will fail - old code no longer applies
+    bool ReadFromDisk(CDiskTxPos pos, FILE** pfileRet=NULL)
+    {
+    	CAutoFile filein(OpenBlockFile(pos, pfileRet ? false : true), SER_DISK, CLIENT_VERSION);
+        if (!filein)
+            return error("CTransaction::ReadFromDisk() : OpenBlockFile failed");
+
+        // Read transaction
+        if (fseek(filein, pos.nTxOffset, SEEK_SET) != 0)
+            return error("CTransaction::ReadFromDisk() : fseek failed");
+        filein >> *this;
+
+        // Return file pointer
+        if (pfileRet) {
+            if (fseek(filein, pos.nTxOffset, SEEK_SET) != 0)
+                return error("CTransaction::ReadFromDisk() : second fseek failed");
+            *pfileRet = filein.release();
+        }
+        return true;
+    }
+    
     friend bool operator==(const CTransaction& a, const CTransaction& b)
     {
         return (a.nVersion  == b.nVersion &&
@@ -647,16 +674,16 @@ void UpdateCoins(const CTransaction& tx, CValidationState &state, CCoinsViewCach
         return !(a == b);
     }
 
-
     std::string ToString() const
     {
         std::string str;
-        str += strprintf("CTransaction(hash=%s, ver=%d, vin.size=%"PRIszu", vout.size=%"PRIszu", nLockTime=%u)\n",
+        str += strprintf("CTransaction(hash=%s, ver=%d, vin.size=%"PRIszu", vout.size=%"PRIszu", nLockTime=%u, data.size=%"PRIszu")\n",
             GetHash().ToString().c_str(),
             nVersion,
             vin.size(),
             vout.size(),
-            nLockTime);
+            nLockTime,
+            data.size());
         for (unsigned int i = 0; i < vin.size(); i++)
             str += "    " + vin[i].ToString() + "\n";
         for (unsigned int i = 0; i < vout.size(); i++)
@@ -676,9 +703,11 @@ void UpdateCoins(const CTransaction& tx, CValidationState &state, CCoinsViewCach
     // Check whether all inputs of this transaction are valid (no double spends, scripts & sigs, amounts)
     // This does not modify the UTXO set. If pvChecks is not NULL, script checks are pushed onto it
     // instead of being performed inline.
-    bool CheckInputs(CValidationState &state, CCoinsViewCache &view, bool fScriptChecks = true,
+    bool CheckInputs(CBlockIndex *pindex, CValidationState &state, CCoinsViewCache &view, bool fScriptChecks = true,
                      unsigned int flags = SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_STRICTENC,
-                     std::vector<CScriptCheck> *pvChecks = NULL) const;
+                     std::map<std::vector<unsigned char>,uint256> &mapTestPool = dummyTestPool,
+                     std::vector<CScriptCheck> *pvChecks = NULL, bool bCheckInputs = true,
+                     bool fBlock = false, bool fMiner = false) const;
 
     // Apply the effects of this transaction on the UTXO set represented by view
     void UpdateCoins(CValidationState &state, CCoinsViewCache &view, CTxUndo &txundo, int nHeight, const uint256 &txhash) const;
@@ -689,8 +718,10 @@ void UpdateCoins(const CTransaction& tx, CValidationState &state, CCoinsViewCach
     // Try to accept this transaction into the memory pool
     bool AcceptToMemoryPool(CValidationState &state, bool fCheckInputs=true, bool fLimitFree = true, bool* pfMissingInputs=NULL);
 
-protected:
+    bool RemoveFromMemoryPool(bool fRecursive = true);
+
     static const CTxOut &GetOutputFor(const CTxIn& input, CCoinsViewCache& mapInputs);
+    static const CCoins &GetOutputCoinsFor(const CTxIn& input, CCoinsViewCache& view);
 };
 
 /** wrapper for CTxOut that provides a more compact serialization */
@@ -1567,7 +1598,7 @@ public:
 
     // Context-independent validity checks
     //  nHeight is needed to see if merged mining is allowed
-    bool CheckBlock(CValidationState &state, int nHeight, bool fCheckPOW=true, bool fCheckMerkleRoot=true) const;
+    bool CheckBlock(CValidationState &state, CBlockIndex* pindex, bool fCheckPOW=true, bool fCheckMerkleRoot=true) const;
 
     // Store block on disk
     // if dbp is provided, the file is known to already reside on disk

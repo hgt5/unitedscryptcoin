@@ -159,6 +159,7 @@ Value getmininginfo(const Array& params, bool fHelp)
     obj.push_back(Pair("networkhashps", getnetworkhashps(params, false)));
     obj.push_back(Pair("pooledtx",      (uint64_t)mempool.size()));
     obj.push_back(Pair("testnet",       fTestNet));
+    obj.push_back(Pair("cakenet",       fCakeNet));
     return obj;
 }
 
@@ -172,10 +173,10 @@ Value getworkex(const Array& params, bool fHelp)
         );
 
     if (vNodes.empty())
-        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "UnitedScryptCoin is not connected!");
+        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "Syscoin is not connected!");
 
     if (IsInitialBlockDownload())
-        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "UnitedScryptCoin is downloading blocks...");
+        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Syscoin is downloading blocks...");
 
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
@@ -312,10 +313,10 @@ Value getwork(const Array& params, bool fHelp)
             "If [data] is specified, tries to solve the block and returns true if it was successful.");
 
     if (vNodes.empty())
-        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "UnitedScryptCoin is not connected!");
+        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "Syscoin is not connected!");
 
     if (IsInitialBlockDownload())
-        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "UnitedScryptCoin is downloading blocks...");
+        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Syscoin is downloading blocks...");
 
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
@@ -454,10 +455,10 @@ Value getblocktemplate(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid mode");
 
     if (vNodes.empty())
-        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "UnitedScryptCoin is not connected!");
+        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "Syscoin is not connected!");
 
     if (IsInitialBlockDownload())
-        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "UnitedScryptCoin is downloading blocks...");
+        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Syscoin is downloading blocks...");
 
     // Update block
     static unsigned int nTransactionsUpdatedLast;
@@ -612,10 +613,10 @@ Value getworkaux(const Array& params, bool fHelp)
             );
 
     if (vNodes.empty())
-        throw JSONRPCError(-9, "UnitedScryptCoin is not connected!");
+        throw JSONRPCError(-9, "Syscoin is not connected!");
 
     if (IsInitialBlockDownload())
-        throw JSONRPCError(-10, "UnitedScryptCoin is downloading blocks...");
+        throw JSONRPCError(-10, "Syscoin is downloading blocks...");
 
     static map<uint256, pair<CBlock*, unsigned int> > mapNewBlock;
     static vector<CBlockTemplate*> vNewBlockTemplate;
@@ -739,7 +740,7 @@ Value getworkaux(const Array& params, bool fHelp)
             pow.SetMerkleBranch(pblock);
             pow.nChainIndex = nChainIndex;
             pow.parentBlockHeader = *pblock;
-            CDataStream ss(SER_GETHASH, PROTOCOL_VERSION);
+            CDataStream ss(SER_GETHASH | SER_GETAUXPOW, PROTOCOL_VERSION);
             ss << pow;
             Object result;
             result.push_back(Pair("auxpow", HexStr(ss.begin(), ss.end())));
@@ -773,10 +774,10 @@ Value getauxblock(const Array& params, bool fHelp)
             "the aux proof of work and returns true if it was successful.");
 
     if (vNodes.empty())
-        throw JSONRPCError(-9, "UnitedScryptCoin is not connected!");
+        throw JSONRPCError(-9, "Syscoin is not connected!");
 
     if (IsInitialBlockDownload())
-        throw JSONRPCError(-10, "UnitedScryptCoin is downloading blocks...");
+        throw JSONRPCError(-10, "Syscoin is downloading blocks...");
 
     static map<uint256, CBlock*> mapNewBlock;
     static vector<CBlockTemplate*> vNewBlockTemplate;
@@ -841,7 +842,7 @@ Value getauxblock(const Array& params, bool fHelp)
         uint256 hash;
         hash.SetHex(params[0].get_str());
         vector<unsigned char> vchAuxPow = ParseHex(params[1].get_str());
-        CDataStream ss(vchAuxPow, SER_GETHASH, PROTOCOL_VERSION);
+        CDataStream ss(vchAuxPow, SER_GETHASH | SER_GETAUXPOW, PROTOCOL_VERSION);
         CAuxPow* pow = new CAuxPow();
         ss >> *pow;
         if (!mapNewBlock.count(hash))

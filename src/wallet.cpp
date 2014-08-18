@@ -9,9 +9,18 @@
 #include "ui_interface.h"
 #include "base58.h"
 #include "coincontrol.h"
+#include "script.h"
+#include "alias.h"
+#include "offer.h"
+#include "cert.h"
 #include <boost/algorithm/string/replace.hpp>
 
 using namespace std;
+
+extern CAliasDB *paliasdb;
+
+inline std::string PubKeyToAddress(const std::vector<unsigned char>& vchPubKey);
+inline std::string Hash160ToAddress(uint160 hash160);
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -356,6 +365,31 @@ void CWallet::WalletUpdateSpent(const CTransaction &tx)
                     wtx.MarkSpent(txin.prevout.n);
                     wtx.WriteToDisk();
                     NotifyTransactionChanged(this, txin.prevout.hash, CT_UPDATED);
+
+                    vector<vector<unsigned char> > vvchArgs;
+                    int op, nOut;
+                    bool good = DecodeAliasTx(tx, op, nOut, vvchArgs, -1);
+                    if(good && IsAliasOp(op)) {
+                        const vector<unsigned char> &vchName = vvchArgs[0];
+                        vector<CAliasIndex> vtxPos;
+                        if (paliasdb->ReadAlias(vchName, vtxPos)) {
+                            NotifyAliasListChanged(this, &tx, vtxPos.back(), CT_UPDATED);
+                        }
+                    } 
+                    good = DecodeOfferTx(tx, op, nOut, vvchArgs, -1);
+                    if (good && IsOfferOp(op)) {
+                        COffer theOffer;
+                        theOffer.UnserializeFromTx(tx);
+                        if(!theOffer.IsNull())
+                            NotifyOfferListChanged(this, &tx, theOffer, CT_UPDATED);
+                    }
+                    good = DecodeCertTx(tx, op, nOut, vvchArgs, -1);
+                    if(good && IsCertOp(op)) {
+                        CCertIssuer theCI;
+                        theCI.UnserializeFromTx(tx);
+                        if(!theCI.IsNull())
+                            NotifyCertIssuerListChanged(this, &tx, theCI, CT_UPDATED);
+                    }
                 }
             }
         }
@@ -463,6 +497,7 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
         if (fInsertedNew || fUpdated)
             if (!wtx.WriteToDisk())
                 return false;
+
 #ifndef QT_GUI
         // If default receiving address gets used, replace it with a new one
         if (vchDefaultKey.IsValid()) {
@@ -487,6 +522,27 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
 
         // Notify UI of new or updated transaction
         NotifyTransactionChanged(this, hash, fInsertedNew ? CT_NEW : CT_UPDATED);
+        vector<vector<unsigned char> > vvchArgs;
+        int op;
+        int nOut;
+        bool good = DecodeAliasTx(wtx, op, nOut, vvchArgs, -1);
+        if (good){
+            if(IsAliasOp(op)) {
+                const vector<unsigned char> &vchName = vvchArgs[0];
+                vector<CAliasIndex> vtxPos;
+                if (paliasdb->ReadAlias(vchName, vtxPos)) {
+                    NotifyAliasListChanged(this, &wtx, vtxPos.back(), fInsertedNew ? CT_NEW : CT_UPDATED);
+                }
+            } else if (IsOfferOp(op)) {
+                COffer theOffer;
+                theOffer.UnserializeFromTx(wtx);
+                NotifyOfferListChanged(this, &wtx, theOffer, fInsertedNew ? CT_NEW : CT_UPDATED);
+            } else if(IsCertOp(op)) {
+                CCertIssuer theCI;
+                theCI.UnserializeFromTx(wtx);
+                NotifyCertIssuerListChanged(this, &wtx, theCI, fInsertedNew ? CT_NEW : CT_UPDATED);
+            }
+        }
 
         // notify an external script when a wallet transaction comes in or is updated
         std::string strCmd = GetArg("-walletnotify", "");
@@ -569,6 +625,39 @@ int64 CWallet::GetDebit(const CTxIn &txin) const
     return 0;
 }
 
+
+int64 CWallet::GetDebitInclName(const CTxIn &txin) const
+{
+    
+    {
+        LOCK(cs_wallet);
+        map<uint256, CWalletTx>::const_iterator mi = mapWallet.find(txin.prevout.hash);
+        if (mi != mapWallet.end())
+        {
+            const CWalletTx& prev = (*mi).second;
+            if (txin.prevout.n < prev.vout.size())
+                if (IsMine(prev.vout[txin.prevout.n]) 
+                    || IsAliasMine(prev, prev.vout[txin.prevout.n]) 
+                    || IsOfferMine(prev, prev.vout[txin.prevout.n])
+                    || IsCertMine(prev, prev.vout[txin.prevout.n]))
+                    return prev.vout[txin.prevout.n].nValue;
+        }
+    }
+    return 0;
+}
+
+int64 CWallet::GetDebitInclName(const CTransaction& tx) const
+{
+    int64 nDebit = 0;
+    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+    {
+        nDebit += GetDebitInclName(txin);
+        if (!MoneyRange(nDebit))
+            throw std::runtime_error("CWallet::GetDebitInclName() : value out of range");
+    }
+    return nDebit;
+}
+
 bool CWallet::IsChange(const CTxOut& txout) const
 {
     CTxDestination address;
@@ -635,30 +724,61 @@ int CWalletTx::GetRequestCount() const
 }
 
 void CWalletTx::GetAmounts(list<pair<CTxDestination, int64> >& listReceived,
-                           list<pair<CTxDestination, int64> >& listSent, int64& nFee, string& strSentAccount) const
+                           list<pair<CTxDestination, int64> >& listSent, int64& nFee, string& strSentAccount, bool &fNameTx) const
 {
     nFee = 0;
     listReceived.clear();
     listSent.clear();
     strSentAccount = strFromAccount;
+    fNameTx = false;
 
     // Compute fee:
-    int64 nDebit = GetDebit();
+    int64 nDebit = GetDebitInclName();
     if (nDebit > 0) // debit>0 means we signed/sent this transaction
     {
         int64 nValueOut = GetValueOut();
         nFee = nDebit - nValueOut;
     }
 
+    // Compute the coin carried with the name operation
+    // as difference of GetDebitInclName() and GetDebit()
+    int64 nCarriedOverCoin = nDebit - GetDebit();
+    if (nCarriedOverCoin != 0)
+        fNameTx = true;
+
     // Sent/received.
     BOOST_FOREACH(const CTxOut& txout, vout)
     {
         CTxDestination address;
-        vector<unsigned char> vchPubKey;
-        if (!ExtractDestination(txout.scriptPubKey, address))
-        {
-            printf("CWalletTx::GetAmounts: Unknown transaction type found, txid %s\n",
-                   this->GetHash().ToString().c_str());
+        string saddress;
+        uint160 hash160;
+        if(!ExtractDestination(txout.scriptPubKey, address)) {
+            if (!ExtractAliasAddress(txout.scriptPubKey, saddress)) {
+                if (!ExtractOfferAddress(txout.scriptPubKey, saddress)) {
+                    if (!ExtractCertIssuerAddress(txout.scriptPubKey, saddress)) {
+                        printf("CWalletTx::GetAmounts: Unknown transaction type found, txid %s\n",
+                       this->GetHash().ToString().c_str());
+                    }
+                }
+            }
+        }
+
+        vector<vector<unsigned char> > vvch;
+        int op;
+        if (DecodeAliasScript(txout.scriptPubKey, op, vvch) && IsAliasOp(op)) {
+            nCarriedOverCoin -= txout.nValue;
+            if (op != OP_ALIAS_NEW)
+                continue; // Ignore locked coin
+        }
+        else if (DecodeOfferScript(txout.scriptPubKey, op, vvch) && IsOfferOp(op)) {
+            nCarriedOverCoin -= txout.nValue;
+            if (op != OP_OFFER_NEW)
+                continue;
+        }
+        else if (DecodeCertScript(txout.scriptPubKey, op, vvch) && IsCertOp(op)) {
+            nCarriedOverCoin -= txout.nValue;
+            if (op != OP_CERTISSUER_NEW)
+                continue;
         }
 
         // Don't report 'change' txouts
@@ -668,10 +788,27 @@ void CWalletTx::GetAmounts(list<pair<CTxDestination, int64> >& listReceived,
         if (nDebit > 0)
             listSent.push_back(make_pair(address, txout.nValue));
 
-        if (pwallet->IsMine(txout))
+        if (pwallet->IsMine(txout) 
+            || IsAliasMine(*this, txout, true) 
+            || IsOfferMine(*this, txout, true)
+            || IsCertMine(*this, txout, true))
             listReceived.push_back(make_pair(address, txout.nValue));
     }
 
+        // Carried over coin may be used to pay fee, if it was reserved during OP_ALIAS_NEW
+    if (nCarriedOverCoin > 0)
+    {
+        if (nCarriedOverCoin >= nFee)
+        {
+            nCarriedOverCoin -= nFee;
+            nFee = 0;
+        }
+        else
+        {
+            nFee -= nCarriedOverCoin;
+            nCarriedOverCoin = 0;
+        }
+    }
 }
 
 void CWalletTx::GetAccountAmounts(const string& strAccount, int64& nReceived,
@@ -683,7 +820,8 @@ void CWalletTx::GetAccountAmounts(const string& strAccount, int64& nReceived,
     string strSentAccount;
     list<pair<CTxDestination, int64> > listReceived;
     list<pair<CTxDestination, int64> > listSent;
-    GetAmounts(listReceived, listSent, allFee, strSentAccount);
+    bool fNameTx;
+    GetAmounts(listReceived, listSent, allFee, strSentAccount, fNameTx);
 
     if (strAccount == strSentAccount)
     {
@@ -1163,26 +1301,32 @@ bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned
 
 
 
-bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend,
-                                CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason, const CCoinControl* coinControl)
+bool CWallet::CreateTransaction(const std::vector<std::pair<CScript, int64> >& vecSend,
+                                CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason,
+								const CCoinControl* coinControl, const std::string& txData)
 {
     int64 nValue = 0;
-    BOOST_FOREACH (const PAIRTYPE(CScript, int64)& s, vecSend)
-    {
-        if (nValue < 0)
-        {
+    BOOST_FOREACH (const PAIRTYPE(CScript, int64)& s, vecSend) {
+        if (nValue < 0) {
             strFailReason = _("Transaction amounts must be positive");
             return false;
         }
         nValue += s.second;
     }
-    if (vecSend.empty() || nValue < 0)
-    {
+    if (vecSend.empty() || nValue < 0) {
         strFailReason = _("Transaction amounts must be positive");
         return false;
     }
 
     wtxNew.BindWallet(this);
+
+    // transaction data
+    if (txData.size() > MAX_TX_DATA_SIZE) {
+        strFailReason = _("txData is too long");
+        return false;
+    }
+
+    wtxNew.data = vchFromString(txData.c_str());
 
     {
         LOCK2(cs_main, cs_wallet);
@@ -1199,6 +1343,10 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend,
                 // vouts to the payees
                 BOOST_FOREACH (const PAIRTYPE(CScript, int64)& s, vecSend)
                 {
+                    // don't create an output for zero coins in data transaction
+                    if (0 == s.second && wtxNew.data.size() > 0)
+                        continue;
+
                     CTxOut txout(s.second, s.first);
                     if (txout.IsDust())
                     {
@@ -1307,8 +1455,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend,
 
                 // Check that enough fee is included
                 int64 nPayFee = nTransactionFee * (1 + (int64)nBytes / 1000);
-                bool fAllowFree = CTransaction::AllowFree(dPriority);
-                int64 nMinFee = wtxNew.GetMinFee(1, fAllowFree, GMF_SEND);
+                int64 nMinFee = wtxNew.GetMinFee(1, false, GMF_SEND);
                 if (nFeeRet < max(nPayFee, nMinFee))
                 {
                     nFeeRet = max(nPayFee, nMinFee);
@@ -1327,11 +1474,12 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend,
 }
 
 bool CWallet::CreateTransaction(CScript scriptPubKey, int64 nValue,
-                                CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason, const CCoinControl* coinControl)
+                                CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason, 
+                                const CCoinControl* coinControl, const std::string& txData)
 {
     vector< pair<CScript, int64> > vecSend;
     vecSend.push_back(make_pair(scriptPubKey, nValue));
-    return CreateTransaction(vecSend, wtxNew, reservekey, nFeeRet, strFailReason, coinControl);
+    return CreateTransaction(vecSend, wtxNew, reservekey, nFeeRet, strFailReason, coinControl, txData);
 }
 
 // Call after CreateTransaction unless you want to abort
@@ -1362,6 +1510,27 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
                 coin.MarkSpent(txin.prevout.n);
                 coin.WriteToDisk();
                 NotifyTransactionChanged(this, coin.GetHash(), CT_UPDATED);
+                vector<vector<unsigned char> > vvchArgs;
+                int op;
+                int nOut;
+                bool good = DecodeAliasTx(wtxNew, op, nOut, vvchArgs, -1);
+                if (good){
+                    if(IsAliasOp(op)) {
+                        const vector<unsigned char> &vchName = vvchArgs[0];
+                        vector<CAliasIndex> vtxPos;
+                        if (paliasdb->ReadAlias(vchName, vtxPos)) {
+                            NotifyAliasListChanged(this, &wtxNew, vtxPos.back(), CT_UPDATED);
+                        }
+                    } else if (IsOfferOp(op)) {
+                        COffer theOffer;
+                        theOffer.UnserializeFromTx(wtxNew);
+                        NotifyOfferListChanged(this, &wtxNew, theOffer, CT_UPDATED);
+                    } else if(IsCertOp(op)) {
+                        CCertIssuer theCI;
+                        theCI.UnserializeFromTx(wtxNew);
+                        NotifyCertIssuerListChanged(this, &wtxNew, theCI, CT_UPDATED);
+                    }
+                }
             }
 
             if (fFileBacked)
@@ -1386,7 +1555,7 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
 
 
 
-string CWallet::SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, bool fAskFee)
+string CWallet::SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, bool fAskFee, const string& txData)
 {
     CReserveKey reservekey(this);
     int64 nFeeRequired;
@@ -1398,7 +1567,7 @@ string CWallet::SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew,
         return strError;
     }
     string strError;
-    if (!CreateTransaction(scriptPubKey, nValue, wtxNew, reservekey, nFeeRequired, strError))
+    if (!CreateTransaction(scriptPubKey, nValue, wtxNew, reservekey, nFeeRequired, strError, NULL, txData))
     {
         if (nValue + nFeeRequired > GetBalance())
             strError = strprintf(_("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds!"), FormatMoney(nFeeRequired).c_str());
@@ -1417,7 +1586,7 @@ string CWallet::SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew,
 
 
 
-string CWallet::SendMoneyToDestination(const CTxDestination& address, int64 nValue, CWalletTx& wtxNew, bool fAskFee)
+string CWallet::SendMoneyToDestination(const CTxDestination& address, int64 nValue, CWalletTx& wtxNew, bool fAskFee, const string& txData)
 {
     // Check amount
     if (nValue <= 0)
@@ -1429,9 +1598,47 @@ string CWallet::SendMoneyToDestination(const CTxDestination& address, int64 nVal
     CScript scriptPubKey;
     scriptPubKey.SetDestination(address);
 
-    return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee);
+    return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee, txData);
 }
 
+
+
+string CWallet::SendData(CWalletTx& wtxNew, bool fAskFee, const std::string& txData)
+{
+    // Check amount
+    if (nTransactionFee > GetBalance())
+        return _("Insufficient funds for fee");
+
+    CReserveKey reservekey(this);
+    int64 nFeeRequired;
+
+    if (IsLocked())
+    {
+        string strError = _("Error: Wallet locked, unable to create transaction!");
+        printf("SendMoney() : %s", strError.c_str());
+        return strError;
+    }
+
+    string strError;
+    CScript scriptPubKey;
+    if (!CreateTransaction(scriptPubKey, 0, wtxNew, reservekey, nFeeRequired, strError, NULL, txData))
+    {
+        if (nFeeRequired > GetBalance())
+            strError = strprintf(_("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds!"), FormatMoney(nFeeRequired).c_str());
+        printf("SendData() : %s\n", strError.c_str());
+        return strError;
+    }
+
+    printf("SendData(): nFeeRequired = %d\n", (int)nFeeRequired);
+
+    if (fAskFee && !uiInterface.ThreadSafeAskFee(nFeeRequired))
+        return "ABORTED";
+
+    if (!CommitTransaction(wtxNew, reservekey))
+        return _("Error: The transaction was rejected! This might happen if some of the coins in your wallet were already spent, such as if you used a copy of wallet.dat and coins were spent in the copy but not marked as spent here.");
+
+    return "";
+}
 
 
 
@@ -1467,7 +1674,7 @@ bool CWallet::SetAddressBookName(const CTxDestination& address, const string& st
     NotifyAddressBookChanged(this, address, strName, ::IsMine(*this, address), (mi == mapAddressBook.end()) ? CT_NEW : CT_UPDATED);
     if (!fFileBacked)
         return false;
-    return CWalletDB(strWalletFile).WriteName(CBitcoinAddress(address).ToString(), strName);
+    return CWalletDB(strWalletFile).WriteAlias(CBitcoinAddress(address).ToString(), strName);
 }
 
 bool CWallet::DelAddressBookName(const CTxDestination& address)
@@ -1476,7 +1683,7 @@ bool CWallet::DelAddressBookName(const CTxDestination& address)
     NotifyAddressBookChanged(this, address, "", ::IsMine(*this, address), CT_DELETED);
     if (!fFileBacked)
         return false;
-    return CWalletDB(strWalletFile).EraseName(CBitcoinAddress(address).ToString());
+    return CWalletDB(strWalletFile).EraseAlias(CBitcoinAddress(address).ToString());
 }
 
 
@@ -1873,8 +2080,34 @@ void CWallet::UpdatedTransaction(const uint256 &hashTx)
         LOCK(cs_wallet);
         // Only notify UI if this transaction is in this wallet
         map<uint256, CWalletTx>::const_iterator mi = mapWallet.find(hashTx);
-        if (mi != mapWallet.end())
+        if (mi != mapWallet.end()) {
             NotifyTransactionChanged(this, hashTx, CT_UPDATED);
+
+            CWalletTx wtx;
+            if (!GetTransaction(hashTx, wtx))
+                return;
+            vector<vector<unsigned char> > vvchArgs;
+            int op;
+            int nOut;
+            bool good = DecodeAliasTx(wtx, op, nOut, vvchArgs, -1);
+            if (good){
+                if(IsAliasOp(op)) {
+                    const vector<unsigned char> &vchName = vvchArgs[0];
+                    vector<CAliasIndex> vtxPos;
+                    if (paliasdb->ReadAlias(vchName, vtxPos)) {
+                        NotifyAliasListChanged(this, &wtx, vtxPos.back(), CT_UPDATED);
+                    }
+                } else if (IsOfferOp(op)) {
+                    COffer theOffer;
+                    theOffer.UnserializeFromTx(wtx);
+                    NotifyOfferListChanged(this, &wtx, theOffer, CT_UPDATED);
+                } else if(IsCertOp(op)) {
+                    CCertIssuer theCI;
+                    theCI.UnserializeFromTx(wtx);
+                    NotifyCertIssuerListChanged(this, &wtx, theCI, CT_UPDATED);
+                }
+            }
+        }
     }
 }
 

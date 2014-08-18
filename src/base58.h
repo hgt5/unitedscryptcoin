@@ -272,19 +272,31 @@ class CBitcoinAddress : public CBase58Data
 public:
     enum
     {
-        PUBKEY_ADDRESS = 68, // UnitedScryptCoin addresses start with U
+        PUBKEY_ADDRESS = 63, // syscoin addresses start with S
         SCRIPT_ADDRESS = 5,
         PUBKEY_ADDRESS_TEST = 65, // testnet keys start with T
         SCRIPT_ADDRESS_TEST = 196,
+        PUBKEY_ADDRESS_CAKE = 67, // testnet keys start with U
+        SCRIPT_ADDRESS_CAKE = 199,
     };
 
     bool Set(const CKeyID &id) {
-        SetData(fTestNet ? PUBKEY_ADDRESS_TEST : PUBKEY_ADDRESS, &id, 20);
+        if(fTestNet)
+            SetData(PUBKEY_ADDRESS_TEST, &id, 20);
+        else if(fCakeNet)
+            SetData(PUBKEY_ADDRESS_CAKE, &id, 20);
+        else 
+            SetData(PUBKEY_ADDRESS, &id, 20);
         return true;
     }
 
     bool Set(const CScriptID &id) {
-        SetData(fTestNet ? SCRIPT_ADDRESS_TEST : SCRIPT_ADDRESS, &id, 20);
+        if(fTestNet)
+            SetData(PUBKEY_ADDRESS_TEST, &id, 20);
+        else if(fCakeNet)
+            SetData(PUBKEY_ADDRESS_CAKE, &id, 20);
+        else 
+            SetData(PUBKEY_ADDRESS, &id, 20);
         return true;
     }
 
@@ -297,30 +309,45 @@ public:
     {
         unsigned int nExpectedSize = 20;
         bool fExpectTestNet = false;
+        bool fExpectCakeNet = false;
         switch(nVersion)
         {
             case PUBKEY_ADDRESS:
                 nExpectedSize = 20; // Hash of public key
                 fExpectTestNet = false;
+                fExpectCakeNet = false;
                 break;
             case SCRIPT_ADDRESS:
                 nExpectedSize = 20; // Hash of CScript
                 fExpectTestNet = false;
+                fExpectCakeNet = false;
                 break;
 
             case PUBKEY_ADDRESS_TEST:
                 nExpectedSize = 20;
                 fExpectTestNet = true;
+                fExpectCakeNet = false;
                 break;
             case SCRIPT_ADDRESS_TEST:
                 nExpectedSize = 20;
                 fExpectTestNet = true;
+                fExpectCakeNet = false;
                 break;
 
+            case PUBKEY_ADDRESS_CAKE:
+                nExpectedSize = 20;
+                fExpectTestNet = false;
+                fExpectCakeNet = true;
+                break;
+            case SCRIPT_ADDRESS_CAKE:
+                nExpectedSize = 20;
+                fExpectTestNet = false;
+                fExpectCakeNet = true;
+                break;
             default:
                 return false;
         }
-        return fExpectTestNet == fTestNet && vchData.size() == nExpectedSize;
+        return fExpectTestNet == fTestNet && fExpectCakeNet == fCakeNet && vchData.size() == nExpectedSize;
     }
 
     CBitcoinAddress()
@@ -402,12 +429,13 @@ public:
     {
         PRIVKEY_ADDRESS = CBitcoinAddress::PUBKEY_ADDRESS + 128,
         PRIVKEY_ADDRESS_TEST = CBitcoinAddress::PUBKEY_ADDRESS_TEST + 128,
+        PRIVKEY_ADDRESS_CAKE = CBitcoinAddress::PUBKEY_ADDRESS_CAKE + 128,
     };
 
     void SetKey(const CKey& vchSecret)
     {
         assert(vchSecret.IsValid());
-        SetData(fTestNet ? PRIVKEY_ADDRESS_TEST : PRIVKEY_ADDRESS, vchSecret.begin(), vchSecret.size());
+        SetData(fTestNet ? PRIVKEY_ADDRESS_TEST : ( fCakeNet ? PRIVKEY_ADDRESS_CAKE : PRIVKEY_ADDRESS ), vchSecret.begin(), vchSecret.size());
         if (vchSecret.IsCompressed())
             vchData.push_back(1);
     }
@@ -422,6 +450,7 @@ public:
     bool IsValid() const
     {
         bool fExpectTestNet = false;
+        bool fExpectCakeNet = false;
         switch(nVersion)
         {
             case PRIVKEY_ADDRESS:
@@ -429,12 +458,20 @@ public:
 
             case PRIVKEY_ADDRESS_TEST:
                 fExpectTestNet = true;
+                fExpectCakeNet = false;
+                break;
+
+            case PRIVKEY_ADDRESS_CAKE:
+                fExpectTestNet = false;
+                fExpectCakeNet = true;
                 break;
 
             default:
                 return false;
         }
-        return fExpectTestNet == fTestNet && (vchData.size() == 32 || (vchData.size() == 33 && vchData[32] == 1));
+        return fExpectTestNet == fTestNet 
+            && fExpectCakeNet == fCakeNet
+            && (vchData.size() == 32 || (vchData.size() == 33 && vchData[32] == 1));
     }
 
     bool SetString(const char* pszSecret)
@@ -456,5 +493,52 @@ public:
     {
     }
 };
+
+inline unsigned char GetAddressVersion() {
+    return fTestNet ? CBitcoinAddress::PUBKEY_ADDRESS_TEST : ( fCakeNet ? CBitcoinAddress::PUBKEY_ADDRESS_CAKE : CBitcoinAddress::PUBKEY_ADDRESS );
+}
+
+inline std::string Hash160ToAddress(uint160 hash160)
+{
+    // add 1-byte version number to the front
+    std::vector<unsigned char> vch(1, GetAddressVersion());
+    vch.insert(vch.end(), UBEGIN(hash160), UEND(hash160));
+    return EncodeBase58Check(vch);
+}
+
+inline bool AddressToHash160(const char* psz, uint160& hash160Ret)
+{
+    std::vector<unsigned char> vch;
+    if (!DecodeBase58Check(psz, vch))
+        return false;
+    if (vch.empty())
+        return false;
+    unsigned char nVersion = vch[0];
+    if (vch.size() != sizeof(hash160Ret) + 1)
+        return false;
+    memcpy(&hash160Ret, &vch[1], sizeof(hash160Ret));
+    return (nVersion == GetAddressVersion());
+}
+
+inline bool AddressToHash160(const std::string& str, uint160& hash160Ret)
+{
+    return AddressToHash160(str.c_str(), hash160Ret);
+}
+
+inline bool IsValidBitcoinAddress(const char* psz)
+{
+    uint160 hash160;
+    return AddressToHash160(psz, hash160);
+}
+
+inline bool IsValidBitcoinAddress(const std::string& str)
+{
+    return IsValidBitcoinAddress(str.c_str());
+}
+
+inline std::string PubKeyToAddress(const std::vector<unsigned char>& vchPubKey)
+{
+    return Hash160ToAddress(Hash160(vchPubKey));
+}
 
 #endif // BITCOIN_BASE58_H
