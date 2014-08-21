@@ -15,6 +15,9 @@ class WalletModel;
 class TransactionView;
 class OverviewPage;
 class AddressBookPage;
+class AliasView;
+class OfferView;
+class CertIssuerListPage;
 class SendCoinsDialog;
 class SignVerifyMessageDialog;
 class RPCConsole;
@@ -60,8 +63,16 @@ private:
 
     OverviewPage *overviewPage;
     QWidget *transactionsPage;
+    AliasView *aliasView;
+	AliasView *dataAliasView;
+    QStackedWidget* aliasListPage;
+    QStackedWidget* dataAliasListPage;
     AddressBookPage *addressBookPage;
     AddressBookPage *receiveCoinsPage;
+    OfferView *offerView;
+	QStackedWidget* offerListPage;
+    CertIssuerListPage *certIssuerListPage;
+    CertIssuerListPage *certListPage;
     SendCoinsDialog *sendCoinsPage;
     SignVerifyMessageDialog *signVerifyMessageDialog;
 
@@ -74,7 +85,17 @@ public slots:
     void gotoHistoryPage();
     /** Switch to address book page */
     void gotoAddressBookPage();
-    /** Switch to receive coins page */
+    /** Switch to alias list page */
+    void gotoAliasListPage();
+    /** Switch to alias list page */
+    void gotoDataAliasListPage();
+    /** Switch to offer page */
+    void gotoOfferListPage();
+    /** Switch to cert issuer page */
+    void gotoCertIssuerListPage();
+    /** Switch to cert page */
+    void gotoCertListPage();
+    /** Switch to cert page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");

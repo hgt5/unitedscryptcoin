@@ -14,6 +14,7 @@ class WalletStack;
 class TransactionView;
 class OverviewPage;
 class AddressBookPage;
+class AliasListPage;
 class SendCoinsDialog;
 class SignVerifyMessageDialog;
 class Notificator;
@@ -65,6 +66,11 @@ public:
     QAction * getOverviewAction() { return overviewAction; }
     QAction * getHistoryAction() { return historyAction; }
     QAction * getAddressBookAction() { return addressBookAction; }
+    QAction * getAliasListAction() { return aliasListAction; }
+    QAction * getDataAliasListAction() { return dataAliasListAction; }
+    QAction * getOfferListAction() { return offerListAction; }
+    QAction * getCertIssuerListAction() { return certIssuerListAction; }
+    QAction * getCertListAction() { return certListAction; }
     QAction * getReceiveCoinsAction() { return receiveCoinsAction; }
     QAction * getSendCoinsAction() { return sendCoinsAction; }
 
@@ -91,6 +97,11 @@ private:
     QAction *quitAction;
     QAction *sendCoinsAction;
     QAction *addressBookAction;
+    QAction *aliasListAction;
+    QAction *dataAliasListAction;
+    QAction *offerListAction;
+    QAction *certIssuerListAction;
+    QAction *certListAction;
     QAction *signMessageAction;
     QAction *verifyMessageAction;
     QAction *aboutAction;
@@ -169,6 +180,16 @@ private slots:
     void gotoHistoryPage();
     /** Switch to address book page */
     void gotoAddressBookPage();
+    /** Switch to alias list page */
+    void gotoAliasListPage();
+    /** Switch to alias list page */
+    void gotoDataAliasListPage();
+    /** Switch to offers page */
+    void gotoOfferListPage();
+    /** Switch to certificate issuer page */
+    void gotoCertIssuerListPage();
+     /** Switch to certificate page */
+    void gotoCertListPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */

@@ -9,6 +9,9 @@
 
 class OptionsModel;
 class AddressTableModel;
+class AliasTableModel;
+class OfferTableModel;
+class CertIssuerTableModel;
 class TransactionTableModel;
 class CWallet;
 class CKeyID;
@@ -28,6 +31,7 @@ public:
     QString address;
     QString label;
     qint64 amount;
+	bool isSyscoinOffer;
 };
 
 /** Interface to Bitcoin wallet from Qt view code. */
@@ -61,6 +65,11 @@ public:
 
     OptionsModel *getOptionsModel();
     AddressTableModel *getAddressTableModel();
+    AliasTableModel *getAliasTableModelMine();
+    AliasTableModel *getAliasTableModelAll();
+    OfferTableModel *getOfferTableModelMine();
+	OfferTableModel *getOfferTableModelAll();
+    CertIssuerTableModel *getCertIssuerTableModel();
     TransactionTableModel *getTransactionTableModel();
     
     qint64 getBalance(const CCoinControl *coinControl=NULL) const;
@@ -71,6 +80,9 @@ public:
 
     // Check address for validity
     bool validateAddress(const QString &address);
+
+    // Check alias for validity
+    bool validateAlias(const QString &alias);
 
     // Return status record for SendCoins, contains error id + information
     struct SendCoinsReturn
@@ -135,6 +147,11 @@ private:
 
     AddressTableModel *addressTableModel;
     TransactionTableModel *transactionTableModel;
+    AliasTableModel *aliasTableModelMine;
+    AliasTableModel *aliasTableModelAll;
+    OfferTableModel *offerTableModelMine;
+	OfferTableModel *offerTableModelAll;
+    CertIssuerTableModel *certIssuerTableModel;
 
     // Cache some values to be able to detect changes
     qint64 cachedBalance;
@@ -175,6 +192,15 @@ public slots:
     void updateTransaction(const QString &hash, int status);
     /* New, updated or removed address book entry */
     void updateAddressBook(const QString &address, const QString &label, bool isMine, int status);
+    /* New, updated or removed alias */
+    void updateAlias(const QString &alias, const QString &value, const QString &expDepth, int status);
+   /* New, updated or removed offer */
+    void updateOffer(const QString &offer, const QString &title, const QString &category, 
+        const QString &price, const QString &quantity, const QString &expDepth,const QString &description,int status);
+    /* New, updated or removed cert issuer / cert */
+    void updateCertIssuer(const QString &cert, const QString &title, const QString &expDepth,int status);
+    /* New, updated or removed cert issuer / cert */
+
     /* Current, immature or unconfirmed balance might have changed - emit 'balanceChanged' if so */
     void pollBalanceChanged();
 };

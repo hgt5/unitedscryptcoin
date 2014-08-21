@@ -69,7 +69,7 @@ BitcoinGUI::BitcoinGUI(QWidget *parent) :
     prevBlocks(0)
 {
     restoreWindowGeometry();
-    setWindowTitle(tr("UnitedScryptCoin") + " - " + tr("Wallet"));
+    setWindowTitle(tr("Syscoin") + " - " + tr("Wallet"));
 #ifndef Q_OS_MAC
     QApplication::setWindowIcon(QIcon(":icons/bitcoin"));
     setWindowIcon(QIcon(":icons/bitcoin"));
@@ -165,6 +165,8 @@ BitcoinGUI::~BitcoinGUI()
 void BitcoinGUI::createActions()
 {
     QActionGroup *tabGroup = new QActionGroup(this);
+	
+
 
     overviewAction = new QAction(QIcon(":/icons/overview"), tr("&Overview"), this);
     overviewAction->setStatusTip(tr("Show general overview of wallet"));
@@ -174,7 +176,7 @@ void BitcoinGUI::createActions()
     tabGroup->addAction(overviewAction);
 
     sendCoinsAction = new QAction(QIcon(":/icons/send"), tr("&Send"), this);
-    sendCoinsAction->setStatusTip(tr("Send coins to a UnitedScryptCoin address"));
+    sendCoinsAction->setStatusTip(tr("Send coins to a Syscoin address"));
     sendCoinsAction->setToolTip(sendCoinsAction->statusTip());
     sendCoinsAction->setCheckable(true);
     sendCoinsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_2));
@@ -201,6 +203,43 @@ void BitcoinGUI::createActions()
     addressBookAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_5));
     tabGroup->addAction(addressBookAction);
 
+    aliasListAction = new QAction(QIcon(":/icons/alias"), tr("A&liases"), this);
+    aliasListAction->setStatusTip(tr("Manage aliases"));
+    aliasListAction->setToolTip(aliasListAction->statusTip());
+    aliasListAction->setCheckable(true);
+    aliasListAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_6));
+    tabGroup->addAction(aliasListAction);
+
+    dataAliasListAction = new QAction(QIcon(":/icons/data"), tr("&Data"), this);
+    dataAliasListAction->setStatusTip(tr("Manage data aliases"));
+    dataAliasListAction->setToolTip(dataAliasListAction->statusTip());
+    dataAliasListAction->setCheckable(true);
+    dataAliasListAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_7));
+    tabGroup->addAction(dataAliasListAction);
+
+
+    offerListAction = new QAction(QIcon(":/icons/cart"), tr("&Marketplace"), this);
+    offerListAction->setStatusTip(tr("Manage offers"));
+    offerListAction->setToolTip(offerListAction->statusTip());
+    offerListAction->setCheckable(true);
+    offerListAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_8));
+    tabGroup->addAction(offerListAction);
+
+	
+    certIssuerListAction = new QAction(QIcon(":/icons/cert"), tr("Certificate &Issuers"), this);
+    certIssuerListAction->setStatusTip(tr("Manage certificate issuers"));
+    certIssuerListAction->setToolTip(certIssuerListAction->statusTip());
+    certIssuerListAction->setCheckable(true);
+    certIssuerListAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_0));
+    tabGroup->addAction(certIssuerListAction);
+
+    certListAction = new QAction(QIcon(":/icons/cert"), tr("Cert&ificates"), this);
+    certListAction->setStatusTip(tr("Manage certificates"));
+    certListAction->setToolTip(certListAction->statusTip());
+    certListAction->setCheckable(true);
+    certListAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_A));
+    tabGroup->addAction(certListAction);
+
     connect(overviewAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(overviewAction, SIGNAL(triggered()), this, SLOT(gotoOverviewPage()));
     connect(sendCoinsAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
@@ -211,19 +250,29 @@ void BitcoinGUI::createActions()
     connect(historyAction, SIGNAL(triggered()), this, SLOT(gotoHistoryPage()));
     connect(addressBookAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(addressBookAction, SIGNAL(triggered()), this, SLOT(gotoAddressBookPage()));
+    connect(aliasListAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
+    connect(aliasListAction, SIGNAL(triggered()), this, SLOT(gotoAliasListPage()));
+    connect(dataAliasListAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
+    connect(dataAliasListAction, SIGNAL(triggered()), this, SLOT(gotoDataAliasListPage()));
+    connect(offerListAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
+    connect(offerListAction, SIGNAL(triggered()), this, SLOT(gotoOfferListPage()));
+    connect(certIssuerListAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
+    connect(certIssuerListAction, SIGNAL(triggered()), this, SLOT(gotoCertIssuerListPage()));
+    connect(certListAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
+    connect(certListAction, SIGNAL(triggered()), this, SLOT(gotoCertListPage()));
 
     quitAction = new QAction(QIcon(":/icons/quit"), tr("E&xit"), this);
     quitAction->setStatusTip(tr("Quit application"));
     quitAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_Q));
     quitAction->setMenuRole(QAction::QuitRole);
-    aboutAction = new QAction(QIcon(":/icons/bitcoin"), tr("&About UnitedScryptCoin"), this);
-    aboutAction->setStatusTip(tr("Show information about UnitedScryptCoin"));
+    aboutAction = new QAction(QIcon(":/icons/bitcoin"), tr("&About Syscoin"), this);
+    aboutAction->setStatusTip(tr("Show information about Syscoin"));
     aboutAction->setMenuRole(QAction::AboutRole);
     aboutQtAction = new QAction(QIcon(":/trolltech/qmessagebox/images/qtlogo-64.png"), tr("About &Qt"), this);
     aboutQtAction->setStatusTip(tr("Show information about Qt"));
     aboutQtAction->setMenuRole(QAction::AboutQtRole);
     optionsAction = new QAction(QIcon(":/icons/options"), tr("&Options..."), this);
-    optionsAction->setStatusTip(tr("Modify configuration options for UnitedScryptCoin"));
+    optionsAction->setStatusTip(tr("Modify configuration options for Syscoin"));
     optionsAction->setMenuRole(QAction::PreferencesRole);
     toggleHideAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Show / Hide"), this);
     toggleHideAction->setStatusTip(tr("Show or hide the main Window"));
@@ -236,9 +285,9 @@ void BitcoinGUI::createActions()
     changePassphraseAction = new QAction(QIcon(":/icons/key"), tr("&Change Passphrase..."), this);
     changePassphraseAction->setStatusTip(tr("Change the passphrase used for wallet encryption"));
     signMessageAction = new QAction(QIcon(":/icons/edit"), tr("Sign &message..."), this);
-    signMessageAction->setStatusTip(tr("Sign messages with your UnitedScryptCoin addresses to prove you own them"));
+    signMessageAction->setStatusTip(tr("Sign messages with your Syscoin addresses to prove you own them"));
     verifyMessageAction = new QAction(QIcon(":/icons/transaction_0"), tr("&Verify message..."), this);
-    verifyMessageAction->setStatusTip(tr("Verify messages to ensure they were signed with specified UnitedScryptCoin addresses"));
+    verifyMessageAction->setStatusTip(tr("Verify messages to ensure they were signed with specified Syscoin addresses"));
 
     openRPCConsoleAction = new QAction(QIcon(":/icons/debugwindow"), tr("&Debug window"), this);
     openRPCConsoleAction->setStatusTip(tr("Open debugging and diagnostic console"));
@@ -295,6 +344,11 @@ void BitcoinGUI::createToolBars()
     toolbar->addAction(receiveCoinsAction);
     toolbar->addAction(historyAction);
     toolbar->addAction(addressBookAction);
+    toolbar->addAction(aliasListAction);
+    toolbar->addAction(dataAliasListAction);
+    toolbar->addAction(offerListAction);
+    toolbar->addAction(certIssuerListAction);
+    toolbar->addAction(certListAction);
 }
 
 void BitcoinGUI::setClientModel(ClientModel *clientModel)
@@ -371,6 +425,11 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     signMessageAction->setEnabled(enabled);
     verifyMessageAction->setEnabled(enabled);
     addressBookAction->setEnabled(enabled);
+    aliasListAction->setEnabled(enabled);
+    dataAliasListAction->setEnabled(enabled);
+    offerListAction->setEnabled(enabled);
+    certIssuerListAction->setEnabled(enabled);
+    certListAction->setEnabled(enabled);
 }
 
 void BitcoinGUI::createTrayIcon()
@@ -378,7 +437,7 @@ void BitcoinGUI::createTrayIcon()
 #ifndef Q_OS_MAC
     trayIcon = new QSystemTrayIcon(this);
 
-    trayIcon->setToolTip(tr("UnitedScryptCoin client"));
+    trayIcon->setToolTip(tr("Syscoin client"));
     trayIcon->setIcon(QIcon(":/icons/toolbar"));
     trayIcon->show();
 #endif
@@ -487,6 +546,31 @@ void BitcoinGUI::gotoAddressBookPage()
     if (walletFrame) walletFrame->gotoAddressBookPage();
 }
 
+void BitcoinGUI::gotoAliasListPage()
+{
+    if (walletFrame) walletFrame->gotoAliasListPage();
+}
+
+void BitcoinGUI::gotoDataAliasListPage()
+{
+    if (walletFrame) walletFrame->gotoDataAliasListPage();
+}
+
+void BitcoinGUI::gotoOfferListPage()
+{
+    if (walletFrame) walletFrame->gotoOfferListPage();
+}
+
+void BitcoinGUI::gotoCertIssuerListPage()
+{
+    if (walletFrame) walletFrame->gotoCertIssuerListPage();
+}
+
+void BitcoinGUI::gotoCertListPage()
+{
+    if (walletFrame) walletFrame->gotoCertListPage();
+}
+
 void BitcoinGUI::gotoReceiveCoinsPage()
 {
     if (walletFrame) walletFrame->gotoReceiveCoinsPage();
@@ -519,7 +603,7 @@ void BitcoinGUI::setNumConnections(int count)
     default: icon = ":/icons/connect_4"; break;
     }
     labelConnectionsIcon->setPixmap(QIcon(icon).pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
-    labelConnectionsIcon->setToolTip(tr("%n active connection(s) to UnitedScryptCoin network", "", count));
+    labelConnectionsIcon->setToolTip(tr("%n active connection(s) to Syscoin network", "", count));
 }
 
 void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
@@ -618,7 +702,7 @@ void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
 
 void BitcoinGUI::message(const QString &title, const QString &message, unsigned int style, bool *ret)
 {
-    QString strTitle = tr("UnitedScryptCoin"); // default title
+    QString strTitle = tr("Syscoin"); // default title
     // Default to information icon
     int nMBoxIcon = QMessageBox::Information;
     int nNotifyIcon = Notificator::Information;
@@ -749,7 +833,7 @@ void BitcoinGUI::dropEvent(QDropEvent *event)
         if (nValidUrisFound)
             walletFrame->gotoSendCoinsPage();
         else
-            message(tr("URI handling"), tr("URI can not be parsed! This can be caused by an invalid UnitedScryptCoin address or malformed URI parameters."),
+            message(tr("URI handling"), tr("URI can not be parsed! This can be caused by an invalid Syscoin address or malformed URI parameters."),
                       CClientUIInterface::ICON_WARNING);
     }
 
@@ -772,7 +856,7 @@ void BitcoinGUI::handleURI(QString strURI)
 {
     // URI has to be valid
     if (!walletFrame->handleURI(strURI))
-        message(tr("URI handling"), tr("URI can not be parsed! This can be caused by an invalid UnitedScryptCoin address or malformed URI parameters."),
+        message(tr("URI handling"), tr("URI can not be parsed! This can be caused by an invalid Syscoin address or malformed URI parameters."),
                   CClientUIInterface::ICON_WARNING);
 }
 

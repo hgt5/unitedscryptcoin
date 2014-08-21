@@ -8,11 +8,16 @@
 #include "bitcoingui.h"
 #include "transactiontablemodel.h"
 #include "addressbookpage.h"
+#include "aliasview.h"
+#include "offerview.h"
+#include "certlistpage.h"
 #include "sendcoinsdialog.h"
 #include "signverifymessagedialog.h"
 #include "clientmodel.h"
 #include "walletmodel.h"
 #include "optionsmodel.h"
+#include "aliastablemodel.h"
+#include "offertablemodel.h"
 #include "transactionview.h"
 #include "overviewpage.h"
 #include "askpassphrasedialog.h"
@@ -37,14 +42,31 @@ WalletView::WalletView(QWidget *parent, BitcoinGUI *_gui):
 {
     // Create tabs
     overviewPage = new OverviewPage();
-
     transactionsPage = new QWidget(this);
+    aliasListPage = new QStackedWidget();
+    dataAliasListPage = new QStackedWidget();
     QVBoxLayout *vbox = new QVBoxLayout();
     QHBoxLayout *hbox_buttons = new QHBoxLayout();
     transactionView = new TransactionView(this);
+    aliasView = new AliasView(aliasListPage, gui);
+    dataAliasView = new AliasView(dataAliasListPage, gui);
+	offerListPage = new QStackedWidget();
+	offerView = new OfferView(offerListPage, gui);
     vbox->addWidget(transactionView);
     QPushButton *exportButton = new QPushButton(tr("&Export"), this);
     exportButton->setToolTip(tr("Export the data in the current tab to a file"));
+
+    QPalette p;
+    p.setColor(QPalette::Window, QColor(0x22, 0x22, 0x22));
+    p.setColor(QPalette::Button, QColor(0x22, 0x22, 0x22));
+    p.setColor(QPalette::Mid, QColor(0x22, 0x22, 0x22));
+    p.setColor(QPalette::Base, QColor(0x22, 0x22, 0x22));
+    p.setColor(QPalette::AlternateBase, QColor(0x22, 0x22, 0x22));
+    setPalette(p);
+    QFile style(":/text/res/text/style.qss");
+    style.open(QFile::ReadOnly);
+    setStyleSheet(QString::fromUtf8(style.readAll()));
+
 #ifndef Q_OS_MAC // Icons on push buttons are very uncommon on Mac
     exportButton->setIcon(QIcon(":/icons/export"));
 #endif
@@ -53,7 +75,12 @@ WalletView::WalletView(QWidget *parent, BitcoinGUI *_gui):
     vbox->addLayout(hbox_buttons);
     transactionsPage->setLayout(vbox);
 
-    addressBookPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::SendingTab);
+	addressBookPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::SendingTab);
+
+
+    certIssuerListPage = new CertIssuerListPage(CertIssuerListPage::ForEditing, CertIssuerListPage::CertIssuerTab);
+
+    certListPage = new CertIssuerListPage(CertIssuerListPage::ForEditing, CertIssuerListPage::CertItemTab);
 
     receiveCoinsPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::ReceivingTab);
 
@@ -61,11 +88,17 @@ WalletView::WalletView(QWidget *parent, BitcoinGUI *_gui):
 
     signVerifyMessageDialog = new SignVerifyMessageDialog(gui);
 
+	
     addWidget(overviewPage);
     addWidget(transactionsPage);
     addWidget(addressBookPage);
+    addWidget(aliasListPage);
+    addWidget(dataAliasListPage);
+    addWidget(certIssuerListPage);
+    addWidget(certListPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
+	addWidget(offerListPage);
 
     // Clicking on a transaction on the overview page simply sends you to transaction history page
     connect(overviewPage, SIGNAL(transactionClicked(QModelIndex)), this, SLOT(gotoHistoryPage()));
@@ -93,6 +126,9 @@ WalletView::~WalletView()
 void WalletView::setBitcoinGUI(BitcoinGUI *gui)
 {
     this->gui = gui;
+    aliasView->setBitcoinGUI(gui);
+	dataAliasView->setBitcoinGUI(gui);
+	offerView->setBitcoinGUI(gui);
 }
 
 void WalletView::setClientModel(ClientModel *clientModel)
@@ -102,6 +138,11 @@ void WalletView::setClientModel(ClientModel *clientModel)
     {
         overviewPage->setClientModel(clientModel);
         addressBookPage->setOptionsModel(clientModel->getOptionsModel());
+        aliasView->setClientModel(clientModel);
+		dataAliasView->setClientModel(clientModel);
+        offerView->setClientModel(clientModel);
+        certIssuerListPage->setOptionsModel(clientModel->getOptionsModel());
+        certListPage->setOptionsModel(clientModel->getOptionsModel());
         receiveCoinsPage->setOptionsModel(clientModel->getOptionsModel());
     }
 }
@@ -117,6 +158,11 @@ void WalletView::setWalletModel(WalletModel *walletModel)
         // Put transaction list in tabs
         transactionView->setModel(walletModel);
         overviewPage->setWalletModel(walletModel);
+        aliasView->setWalletModel(walletModel);
+		dataAliasView->setWalletModel(walletModel);
+        offerView->setWalletModel(walletModel);
+        certIssuerListPage->setModel(walletModel->getCertIssuerTableModel());
+        certListPage->setModel(walletModel->getCertIssuerTableModel());
         addressBookPage->setModel(walletModel->getAddressTableModel());
         receiveCoinsPage->setModel(walletModel->getAddressTableModel());
         sendCoinsPage->setModel(walletModel);
@@ -162,6 +208,35 @@ void WalletView::gotoHistoryPage()
     setCurrentWidget(transactionsPage);
 }
 
+void WalletView::gotoAliasListPage()
+{
+    gui->getAliasListAction()->setChecked(true);
+    setCurrentWidget(aliasListPage);
+}
+
+void WalletView::gotoDataAliasListPage()
+{
+    gui->getDataAliasListAction()->setChecked(true);
+    setCurrentWidget(dataAliasListPage);
+}
+
+void WalletView::gotoOfferListPage()
+{
+	gui->getOfferListAction()->setChecked(true);
+	setCurrentWidget(offerListPage);  
+}
+void WalletView::gotoCertIssuerListPage()
+{
+    gui->getCertIssuerListAction()->setChecked(true);
+    setCurrentWidget(certIssuerListPage);
+}
+
+void WalletView::gotoCertListPage()
+{
+    gui->getCertListAction()->setChecked(true);
+    setCurrentWidget(certListPage);
+}
+
 void WalletView::gotoAddressBookPage()
 {
     gui->getAddressBookAction()->setChecked(true);
@@ -203,8 +278,23 @@ void WalletView::gotoVerifyMessageTab(QString addr)
 
 bool WalletView::handleURI(const QString& strURI)
 {
+ // URI has to be valid
+    if (aliasView->handleURI(strURI))
+    {
+        return true;
+    }
+    if (dataAliasView->handleURI(strURI))
+    {
+        return true;
+    }
+    else if (offerView->handleURI(strURI))
+    {
+		gotoOfferListPage();
+		emit showNormalIfMinimized();
+        return true;
+    }
     // URI has to be valid
-    if (sendCoinsPage->handleURI(strURI))
+    else if (sendCoinsPage->handleURI(strURI))
     {
         gotoSendCoinsPage();
         emit showNormalIfMinimized();

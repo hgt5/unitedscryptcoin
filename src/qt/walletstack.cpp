@@ -96,6 +96,44 @@ void WalletStack::gotoAddressBookPage()
         i.value()->gotoAddressBookPage();
 }
 
+void WalletStack::gotoAliasListPage()
+{
+    QMap<QString, WalletView*>::const_iterator i;
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoAliasListPage();
+}
+
+void WalletStack::gotoDataAliasListPage()
+{
+    QMap<QString, WalletView*>::const_iterator i;
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoDataAliasListPage();
+}
+
+void WalletStack::gotoOfferListPage()
+{
+    QMap<QString, WalletView*>::const_iterator i;
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoOfferListPage();
+}
+
+
+
+void WalletStack::gotoCertIssuerListPage()
+{
+    QMap<QString, WalletView*>::const_iterator i;
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoCertIssuerListPage();
+}
+
+void WalletStack::gotoCertListPage()
+{
+    QMap<QString, WalletView*>::const_iterator i;
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoCertListPage();
+}
+
+
 void WalletStack::gotoReceiveCoinsPage()
 {
     QMap<QString, WalletView*>::const_iterator i;
